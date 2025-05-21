@@ -21,7 +21,7 @@ export default function Screenshots() {
   }, []);
 
   return (
-    <main className="flex min-h-screen flex-col items-center p-24">
+    <div className="flex min-h-screen flex-col items-center p-24">
       <div className="max-w-5xl w-full">
         <div className="mb-6">
           <Link href="/" className="text-blue-500 hover:underline">
@@ -59,6 +59,6 @@ export default function Screenshots() {
           </div>
         )}
       </div>
-    </main>
+    </div>
   );
 }
