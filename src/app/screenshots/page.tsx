@@ -1,22 +1,22 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from "react";
+import Link from "next/link";
 
 export default function Screenshots() {
   const [screenshots, setScreenshots] = useState<string[]>([]);
 
   useEffect(() => {
     // Check if /public/screenshots directory has files
-    fetch('/api/test-model-viewer')
-      .then(res => res.json())
-      .then(data => {
+    fetch("/api/test-model-viewer")
+      .then((res) => res.json())
+      .then((data) => {
         if (data.success && data.screenshots) {
           setScreenshots(data.screenshots);
         }
       })
-      .catch(err => {
-        console.error('Error fetching screenshots:', err);
+      .catch((err) => {
+        console.error("Error fetching screenshots:", err);
       });
   }, []);
 
@@ -39,9 +39,9 @@ export default function Screenshots() {
               <div key={index} className="border rounded-lg overflow-hidden">
                 <div className="p-3 bg-gray-100 flex justify-between items-center">
                   <h2 className="font-bold">
-                    {index === 0 ? 'Default View' : `Angle ${index}`}
+                    {index === 0 ? "Default View" : `Angle ${index}`}
                   </h2>
-                  
+                  <a
                     href={screenshot}
                     download={`screenshot-${index}.png`}
                     className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
