@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
@@ -21,8 +22,11 @@ export default function Home() {
       } else {
         setError(data.error || "Test failed");
       }
-    } catch (err: any) {
-      setError(err.message || "An unexpected error occurred");
+    } catch (err: Error | unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      // Then use errorMessage instead of err.message
+
+      setError(errorMessage || "An unexpected error occurred");
     } finally {
       setLoading(false);
     }
@@ -79,9 +83,11 @@ export default function Home() {
                     <p className="p-2 bg-gray-100 font-bold">
                       {index === 0 ? "Default View" : `Angle ${index}`}
                     </p>
-                    <img
+                    <Image
                       src={screenshot}
                       alt={`Screenshot ${index}`}
+                      width={800}
+                      height={600}
                       className="w-full h-auto"
                     />
                   </div>

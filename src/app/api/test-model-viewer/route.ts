@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import puppeteer from "puppeteer";
 import fs from "fs";
 import path from "path";
+import puppeteerPackage from "puppeteer/package.json";
 
 // Create output directory if it doesn't exist
 const outputDir = path.join(process.cwd(), "public", "screenshots");
@@ -14,10 +15,8 @@ export async function GET() {
 
   try {
     console.log("Starting headless browser test for model-viewer...");
-    console.log(
-      "Puppeteer version:",
-      require("puppeteer/package.json").version
-    );
+
+    console.log("Puppeteer version:", puppeteerPackage.version);
 
     // Launch browser with increased timeout and debug logging
     console.log("Launching browser...");
