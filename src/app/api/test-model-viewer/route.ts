@@ -21,7 +21,7 @@ export async function GET() {
     // Launch browser with increased timeout and debug logging
     console.log("Launching browser...");
     browser = await puppeteer.launch({
-      headless: "new", // Use the new headless mode
+      headless: true, // Use the new headless mode
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
