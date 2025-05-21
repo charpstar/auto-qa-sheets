@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@vercel/blob": "^1.0.2",
     "next": "15.3.2",
     "puppeteer": "^24.9.0",
     "react": "^19.0.0",

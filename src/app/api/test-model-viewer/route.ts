@@ -3,6 +3,7 @@ import puppeteer from "puppeteer";
 import fs from "fs";
 import path from "path";
 import puppeteerPackage from "puppeteer/package.json";
+import { put } from "@vercel/blob";
 
 // Create output directory if it doesn't exist
 const outputDir = path.join(process.cwd(), "public", "screenshots");
@@ -215,10 +216,18 @@ export async function GET() {
       const screenshotBuffer = await page.screenshot({
         fullPage: true,
       });
-      fs.writeFileSync(path.join(outputDir, angleName), screenshotBuffer);
-      screenshots.push(angleName);
 
-      screenshots.push(angleName);
+      // Convert to proper Buffer type
+      const buffer = Buffer.from(screenshotBuffer);
+
+      // Now use the properly typed buffer with put
+      const { url } = await put(angleName, buffer, {
+        contentType: "image/png",
+        access: "public",
+      });
+
+      // Add URL to screenshots array
+      screenshots.push(url);
     }
 
     // Close browser

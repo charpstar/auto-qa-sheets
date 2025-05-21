@@ -7,7 +7,6 @@ export default function Screenshots() {
   const [screenshots, setScreenshots] = useState<string[]>([]);
 
   useEffect(() => {
-    // Check if /public/screenshots directory has files
     fetch("/api/test-model-viewer")
       .then((res) => res.json())
       .then((data) => {
