@@ -178,7 +178,7 @@ export async function GET() {
 
     // Take a screenshot to verify
     await page.screenshot({
-      path: path.join(outputDir, "model-default.png"),
+      path: path.join(outputDir, "model-default.png") as `${string}.png`,
       fullPage: true,
     });
 
@@ -198,6 +198,10 @@ export async function GET() {
       // Use proper evaluate function to set camera orbit
       await page.evaluate((angle) => {
         const viewer = document.querySelector("model-viewer");
+        if (!viewer) {
+          console.error("model-viewer element not found");
+          return;
+        }
         viewer.setAttribute("camera-orbit", angle);
         console.log(`Camera orbit set to ${angle}`);
       }, angles[i]);
@@ -208,10 +212,11 @@ export async function GET() {
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
       console.log(`Taking screenshot for angle ${angles[i]}...`);
-      await page.screenshot({
-        path: path.join(outputDir, angleName),
+      const screenshotBuffer = await page.screenshot({
         fullPage: true,
       });
+      fs.writeFileSync(path.join(outputDir, angleName), screenshotBuffer);
+      screenshots.push(angleName);
 
       screenshots.push(angleName);
     }
@@ -236,10 +241,13 @@ export async function GET() {
       try {
         const pages = await browser.pages();
         if (pages.length > 0) {
-          await pages[0].screenshot({
-            path: path.join(outputDir, "error-state.png"),
+          const errorScreenshotBuffer = await pages[0].screenshot({
             fullPage: true,
           });
+          fs.writeFileSync(
+            path.join(outputDir, "error-state.png"),
+            errorScreenshotBuffer
+          );
         }
       } catch (screenshotError) {
         console.error("Failed to take error screenshot:", screenshotError);
@@ -249,7 +257,10 @@ export async function GET() {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "An error occurred during the test",
+        error:
+          error instanceof Error
+            ? error.message
+            : "An error occurred during the test",
         suggestion: "Try increasing timeouts or checking browser compatibility",
       },
       { status: 500 }
