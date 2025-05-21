@@ -22,11 +22,10 @@ export default function Home() {
       } else {
         setError(data.error || "Test failed");
       }
-    } catch (err: Error | unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      // Then use errorMessage instead of err.message
-
-      setError(errorMessage || "An unexpected error occurred");
+    } catch (err: unknown) {
+      const errorMessage =
+        err instanceof Error ? err.message : "An unknown error occurred";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
