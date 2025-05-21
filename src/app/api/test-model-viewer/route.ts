@@ -163,10 +163,10 @@ export async function GET() {
           }, 45000)
         ), // Wait 45 seconds and continue
       ]);
-    } catch (loadError) {
+    } catch (loadError: unknown) {
       console.warn(
         "Warning: Model load detection timed out, proceeding anyway:",
-        loadError.message
+        loadError instanceof Error ? loadError.message : String(loadError)
       );
       // Continue execution even if model load detection times out
     }
