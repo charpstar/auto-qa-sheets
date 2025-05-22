@@ -53,6 +53,12 @@ export default function Home() {
           <Link href="/screenshots" className="text-blue-500 hover:underline">
             → Screenshots
           </Link>
+          <Link
+            href="/drive-test"
+            className="text-blue-500 hover:underline mr-4"
+          >
+            → Drive Test
+          </Link>
         </div>
         {loading && (
           <div className="mt-4">
