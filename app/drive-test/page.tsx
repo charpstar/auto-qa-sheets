@@ -47,9 +47,6 @@ export default function DriveTest() {
   const downloadGLB = async () => {
     try {
       setIsLoading(true);
-      setTestResult(null);
-
-      console.log("Downloading GLB file...");
 
       const response = await fetch("/api/download-glb", {
         method: "POST",
@@ -59,10 +56,21 @@ export default function DriveTest() {
         body: JSON.stringify({ articleId }),
       });
 
-      const result = await response.json();
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData?.error || "Download failed");
+      }
 
-      console.log("Download result:", result);
-      setTestResult(result);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${articleId}.glb`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Download failed:", error);
       setTestResult({

@@ -28,10 +28,11 @@ async function findGLBFile(
     console.log(`🔍 Searching for GLB file: ${articleId}.glb`);
 
     const response = await drive.files.list({
-      q: `name='${articleId}.glb' and parents in '${process.env.GOOGLE_DRIVE_FOLDER_ID}' and trashed=false`,
-      fields: "files(id, name, size, mimeType)",
-    });
+      q: `name contains '${articleId}' and '${process.env.GOOGLE_DRIVE_FOLDER_ID}' in parents and trashed=false`,
 
+      fields: "files(id, name)",
+    });
+    console.log("Files in folder:", response.data.files);
     const files = response.data.files;
 
     if (!files || files.length === 0) {
@@ -139,24 +140,13 @@ export async function POST(request: NextRequest) {
     // Download the GLB file
     const glbBuffer = await downloadGLBFile(drive, fileId);
 
-    // Upload to Vercel Blob for temporary storage
-    const fileName = `${articleId}-${Date.now()}.glb`;
-    const { url: blobUrl } = await put(fileName, glbBuffer, {
-      access: "public",
-      contentType: "model/gltf-binary",
-    });
-
-    console.log(`✅ GLB file uploaded to Blob storage: ${blobUrl}`);
-
-    return NextResponse.json({
-      success: true,
-      message: `GLB file downloaded successfully for Article ID: ${articleId}`,
-      articleId,
-      fileName,
-      blobUrl,
-      fileSize: glbBuffer.length,
-      downloadedAt: new Date().toISOString(),
-    });
+    const response = new NextResponse(glbBuffer);
+    response.headers.set("Content-Type", "model/gltf-binary");
+    response.headers.set(
+      "Content-Disposition",
+      `attachment; filename="${articleId}.glb"`
+    );
+    return response;
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
