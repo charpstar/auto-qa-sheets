@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link"; // Add this import
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
@@ -45,7 +46,14 @@ export default function Home() {
             {loading ? "Running Test..." : "Run Headless Test"}
           </button>
         </div>
-
+        <div className="mb-8">
+          <Link href="/status" className="text-blue-500 hover:underline mr-4">
+            → Status Monitor
+          </Link>
+          <Link href="/screenshots" className="text-blue-500 hover:underline">
+            → Screenshots
+          </Link>
+        </div>
         {loading && (
           <div className="mt-4">
             <p className="text-gray-600">

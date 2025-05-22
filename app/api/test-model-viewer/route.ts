@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import puppeteer from "puppeteer";
-import chromium from "@sparticuz/chromium-min";
 import { put } from "@vercel/blob";
 
 export const dynamic = "force-dynamic";
@@ -10,14 +9,11 @@ const generateId = () =>
   `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 export async function GET() {
-  const isProd = process.env.NODE_ENV === "production";
-
   try {
     const browser = await puppeteer.launch({
+      executablePath: "/usr/bin/chromium-browser", // System-installed Chromium
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
       headless: true,
-      executablePath: isProd ? await chromium.executablePath() : undefined,
-      args: isProd ? chromium.args : [],
-      defaultViewport: isProd ? chromium.defaultViewport : undefined,
     });
 
     const page = await browser.newPage();
@@ -54,7 +50,7 @@ export async function GET() {
       throw new Error("Screenshot capture failed");
     }
 
-    // Upload to Vercel Blob Storage
+    // Upload to Vercel Blob
     const { url } = await put(
       `model-screenshot-${generateId()}.png`,
       screenshotBuffer as Buffer,
@@ -63,8 +59,6 @@ export async function GET() {
         contentType: "image/png",
       }
     );
-
-    console.log("✅ Uploaded to Blob Storage:", url);
 
     return NextResponse.json({
       success: true,
