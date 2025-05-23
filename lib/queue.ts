@@ -30,6 +30,7 @@ export interface QAJob {
       overall: number;
     };
   };
+  pdfUrl?: string;
   processingLogs: string[];
 }
 
@@ -187,6 +188,7 @@ class JobQueue {
       job.completedAt = new Date().toISOString();
       job.screenshots = result.screenshots;
       job.aiAnalysis = result.aiAnalysis;
+      job.pdfUrl = result.pdfUrl;
       job.processingLogs.push(`Completed successfully at ${job.completedAt}`);
       job.processingLogs.push(
         `Generated ${result.screenshots.length} screenshots`
@@ -194,6 +196,10 @@ class JobQueue {
 
       if (result.aiAnalysis) {
         job.processingLogs.push(`AI Analysis: ${result.aiAnalysis.status}`);
+      }
+
+      if (result.pdfUrl) {
+        job.processingLogs.push(`PDF Report: ${result.pdfUrl}`);
       }
 
       console.log(`✅ Job completed: ${job.id}`);
@@ -235,10 +241,11 @@ class JobQueue {
   // The actual QA processing logic
   private async executeQAProcessing(
     job: QAJob
-  ): Promise<{ screenshots: string[]; aiAnalysis?: any }> {
-    // Import the screenshot processor and AI analyzer
+  ): Promise<{ screenshots: string[]; aiAnalysis?: any; pdfUrl?: string }> {
+    // Import the screenshot processor, AI analyzer, and PDF generator
     const { screenshotProcessor } = await import("./screenshotProcessor");
     const { aiAnalyzer } = await import("./aiAnalysis");
+    const { generateQAReport } = await import("./pdfGenerator");
 
     // Step 1: Process screenshots using the dedicated processor
     job.processingLogs.push("Starting screenshot generation...");
@@ -247,6 +254,9 @@ class JobQueue {
     // Add processing logs to the job
     job.processingLogs.push(...screenshotResult.processingLogs);
 
+    let aiAnalysisResult = null;
+    let pdfUrl: string | undefined = undefined;
+
     // Step 2: Run AI analysis on screenshots vs references
     if (screenshotResult.screenshots.length > 0 && job.references.length > 0) {
       job.processingLogs.push(
@@ -254,7 +264,7 @@ class JobQueue {
       );
 
       try {
-        const analysisResult = await aiAnalyzer.analyzeScreenshots({
+        aiAnalysisResult = await aiAnalyzer.analyzeScreenshots({
           screenshots: screenshotResult.screenshots,
           references: job.references,
           articleId: job.articleId,
@@ -262,21 +272,38 @@ class JobQueue {
         });
 
         job.processingLogs.push("✅ AI analysis completed successfully");
-        job.processingLogs.push(`Analysis status: ${analysisResult.status}`);
+        job.processingLogs.push(`Analysis status: ${aiAnalysisResult.status}`);
         job.processingLogs.push(
-          `Found ${analysisResult.differences.length} differences`
+          `Found ${aiAnalysisResult.differences.length} differences`
         );
 
-        if (analysisResult.scores) {
+        if (aiAnalysisResult.scores) {
           job.processingLogs.push(
-            `Similarity scores - Silhouette: ${analysisResult.scores.silhouette}%, Proportion: ${analysisResult.scores.proportion}%, Color/Material: ${analysisResult.scores.colorMaterial}%, Overall: ${analysisResult.scores.overall}%`
+            `Similarity scores - Silhouette: ${aiAnalysisResult.scores.silhouette}%, Proportion: ${aiAnalysisResult.scores.proportion}%, Color/Material: ${aiAnalysisResult.scores.colorMaterial}%, Overall: ${aiAnalysisResult.scores.overall}%`
           );
         }
 
-        return {
-          screenshots: screenshotResult.screenshots,
-          aiAnalysis: analysisResult,
-        };
+        // Step 3: Generate PDF report if AI analysis succeeded
+        job.processingLogs.push("Starting PDF report generation...");
+
+        try {
+          // Temporarily store AI analysis in job for PDF generation
+          job.aiAnalysis = aiAnalysisResult;
+          job.screenshots = screenshotResult.screenshots;
+
+          const pdfResult = await generateQAReport(job);
+          pdfUrl = pdfResult.pdfUrl;
+
+          job.processingLogs.push(...pdfResult.processingLogs);
+          job.processingLogs.push(`✅ PDF report generated: ${pdfUrl}`);
+        } catch (pdfError) {
+          const errorMsg = `PDF generation failed: ${
+            pdfError instanceof Error ? pdfError.message : "Unknown error"
+          }`;
+          job.processingLogs.push(`❌ ${errorMsg}`);
+          // Continue without PDF rather than failing the entire job
+          job.processingLogs.push("⚠️ Continuing without PDF report");
+        }
       } catch (aiError) {
         const errorMsg = `AI analysis failed: ${
           aiError instanceof Error ? aiError.message : "Unknown error"
@@ -284,21 +311,21 @@ class JobQueue {
         job.processingLogs.push(`❌ ${errorMsg}`);
 
         // Continue without AI analysis rather than failing the entire job
-        job.processingLogs.push("⚠️ Continuing without AI analysis");
-        return {
-          screenshots: screenshotResult.screenshots,
-          aiAnalysis: null,
-        };
+        job.processingLogs.push(
+          "⚠️ Continuing without AI analysis and PDF report"
+        );
       }
     } else {
       job.processingLogs.push(
-        "⚠️ Skipping AI analysis - no screenshots or references available"
+        "⚠️ Skipping AI analysis and PDF generation - no screenshots or references available"
       );
-      return {
-        screenshots: screenshotResult.screenshots,
-        aiAnalysis: null,
-      };
     }
+
+    return {
+      screenshots: screenshotResult.screenshots,
+      aiAnalysis: aiAnalysisResult,
+      pdfUrl: pdfUrl || undefined,
+    };
   }
 
   // Clean up old completed/failed jobs

@@ -42,6 +42,7 @@ interface QueueJob {
       overall: number;
     };
   };
+  pdfUrl?: string;
   processingLogs: string[];
 }
 
@@ -350,6 +351,20 @@ const QAMonitorDashboard = () => {
                     {job.error && (
                       <div className="text-xs text-red-600 bg-red-50 p-2 rounded mt-2">
                         Error: {job.error}
+                      </div>
+                    )}
+
+                    {job.pdfUrl && (
+                      <div className="mt-3">
+                        <a
+                          href={job.pdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+                        >
+                          <span className="mr-2">📄</span>
+                          Download QA Report
+                        </a>
                       </div>
                     )}
 
