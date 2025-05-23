@@ -249,6 +249,8 @@ export class PDFGenerator {
         const imageHeight = annotatedImages.length > 1 ? 280 : 380;
         let currentY = doc.y;
 
+        console.log(`📄 Adding ${annotatedImages.length} images to PDF...`);
+
         for (let i = 0; i < annotatedImages.length; i++) {
           if (i > 0 && currentY + imageHeight + 40 > 750) {
             doc.addPage();
@@ -259,21 +261,71 @@ export class PDFGenerator {
           doc.moveDown(0.3);
           currentY = doc.y;
 
-          // Check if image file exists and is valid
-          if (fs.existsSync(annotatedImages[i])) {
+          const imagePath = annotatedImages[i];
+          console.log(`📄 Processing image ${i + 1}: ${imagePath}`);
+
+          // Check if this is a URL or file path
+          if (imagePath.startsWith("http")) {
+            // It's a URL, need to download it first
             try {
-              doc.image(annotatedImages[i], 50, currentY, {
-                width: imageWidth,
-                height: imageHeight,
-                fit: [imageWidth, imageHeight],
-                align: "center",
-              });
-            } catch (imgError) {
-              console.error(`Failed to add image ${i} to PDF:`, imgError);
-              doc.text(`[Image ${i + 1} could not be loaded]`, 50, currentY);
+              console.log(`📥 Downloading image from URL: ${imagePath}`);
+              const response = await fetch(imagePath);
+              if (response.ok) {
+                const imageBuffer = Buffer.from(await response.arrayBuffer());
+                const tempImagePath = path.join(
+                  this.tmpDir,
+                  `temp_img_${i}.png`
+                );
+                fs.writeFileSync(tempImagePath, imageBuffer);
+
+                doc.image(tempImagePath, 50, currentY, {
+                  width: imageWidth,
+                  height: imageHeight,
+                  fit: [imageWidth, imageHeight],
+                  align: "center",
+                });
+                console.log(`✅ Successfully added image ${i + 1} to PDF`);
+              } else {
+                throw new Error(`Failed to download image: ${response.status}`);
+              }
+            } catch (urlError) {
+              console.error(
+                `❌ Failed to download and add image ${i + 1}:`,
+                urlError
+              );
+              doc.text(
+                `[Image ${i + 1} could not be loaded from URL]`,
+                50,
+                currentY
+              );
             }
           } else {
-            doc.text(`[Image ${i + 1} not found]`, 50, currentY);
+            // It's a file path
+            if (fs.existsSync(imagePath)) {
+              try {
+                const stats = fs.statSync(imagePath);
+                if (stats.size > 0) {
+                  doc.image(imagePath, 50, currentY, {
+                    width: imageWidth,
+                    height: imageHeight,
+                    fit: [imageWidth, imageHeight],
+                    align: "center",
+                  });
+                  console.log(`✅ Successfully added image ${i + 1} to PDF`);
+                } else {
+                  throw new Error("Image file is empty");
+                }
+              } catch (imgError) {
+                console.error(
+                  `❌ Failed to add image ${i + 1} to PDF:`,
+                  imgError
+                );
+                doc.text(`[Image ${i + 1} could not be loaded]`, 50, currentY);
+              }
+            } else {
+              console.error(`❌ Image file not found: ${imagePath}`);
+              doc.text(`[Image ${i + 1} not found]`, 50, currentY);
+            }
           }
 
           currentY += imageHeight + 20;
