@@ -57,12 +57,12 @@ export class ScreenshotProcessor {
     cameraAngle: string
   ): string {
     const cameraSettings = {
-      front: 'camera-orbit="0deg 75deg 150%"',
-      back: 'camera-orbit="180deg 75deg 150%"',
-      left: 'camera-orbit="-90deg 75deg 150%"',
-      right: 'camera-orbit="90deg 75deg 150%"',
-      top: 'camera-orbit="0deg 0deg 150%"',
-      isometric: 'camera-orbit="45deg 55deg 150%"',
+      front: 'camera-orbit="0deg 75deg 4m"',
+      back: 'camera-orbit="180deg 75deg 4m"',
+      left: 'camera-orbit="-90deg 75deg 4m"',
+      right: 'camera-orbit="90deg 75deg 4m"',
+      top: 'camera-orbit="0deg 0deg 4m"',
+      isometric: 'camera-orbit="45deg 55deg 4m"',
     };
 
     return `
@@ -120,26 +120,95 @@ export class ScreenshotProcessor {
       await page.setViewport({ width: 800, height: 600 });
 
       const htmlContent = this.generateModelViewerHTML(glbDataURL, angle);
-      await page.setContent(htmlContent, { waitUntil: "networkidle0" });
 
-      // Wait for model-viewer to load and render
-      await page.waitForSelector("model-viewer", { timeout: 30000 });
+      // Set longer timeouts for model loading
+      await page.setContent(htmlContent, {
+        waitUntil: "domcontentloaded", // Changed from networkidle0 to be less strict
+        timeout: 60000, // Increased timeout to 60 seconds
+      });
 
-      // Additional wait for model to fully load
+      console.log(
+        `📸 Content loaded for ${angle}, waiting for model-viewer...`
+      );
+
+      // Wait for model-viewer element with longer timeout
+      await page.waitForSelector("model-viewer", { timeout: 60000 });
+
+      console.log(
+        `📸 Model-viewer found for ${angle}, waiting for model to load...`
+      );
+
+      // Enhanced model loading wait with multiple strategies
       await page.evaluate(() => {
         return new Promise((resolve) => {
           const modelViewer = document.querySelector("model-viewer") as any;
-          if (modelViewer) {
-            if (modelViewer.modelIsVisible) {
-              resolve(true);
-            } else {
-              modelViewer.addEventListener("load", () => resolve(true));
-            }
-          } else {
-            setTimeout(() => resolve(true), 3000);
+
+          if (!modelViewer) {
+            console.log("No model-viewer found");
+            setTimeout(() => resolve(true), 5000); // Fallback timeout
+            return;
           }
+
+          let resolved = false;
+          const resolveOnce = () => {
+            if (!resolved) {
+              resolved = true;
+              resolve(true);
+            }
+          };
+
+          // Strategy 1: Check if model is already loaded
+          if (modelViewer.modelIsVisible) {
+            console.log("Model already visible");
+            resolveOnce();
+            return;
+          }
+
+          // Strategy 2: Listen for load event
+          const onLoad = () => {
+            console.log("Model load event fired");
+            resolveOnce();
+          };
+
+          // Strategy 3: Listen for model-visibility event
+          const onModelVisibility = () => {
+            console.log("Model visibility event fired");
+            resolveOnce();
+          };
+
+          modelViewer.addEventListener("load", onLoad);
+          modelViewer.addEventListener("model-visibility", onModelVisibility);
+
+          // Strategy 4: Fallback timeout
+          setTimeout(() => {
+            console.log("Model loading timeout reached, proceeding anyway");
+            resolveOnce();
+          }, 15000); // 15 second fallback
+
+          // Strategy 5: Check periodically if model becomes visible
+          const checkInterval = setInterval(() => {
+            if (modelViewer.modelIsVisible) {
+              console.log("Model became visible during polling");
+              clearInterval(checkInterval);
+              resolveOnce();
+            }
+          }, 1000);
+
+          // Clean up interval after timeout
+          setTimeout(() => {
+            clearInterval(checkInterval);
+          }, 15000);
         });
       });
+
+      console.log(
+        `📸 Model loaded for ${angle}, waiting additional time for rendering...`
+      );
+
+      // Additional wait for rendering to stabilize
+      await page.waitForTimeout(3000);
+
+      console.log(`📸 Taking screenshot for ${angle}...`);
 
       // Take screenshot
       const screenshotBuffer = await page.screenshot({
@@ -160,6 +229,9 @@ export class ScreenshotProcessor {
 
       console.log(`✅ Screenshot uploaded: ${angle} - ${url}`);
       return url;
+    } catch (error) {
+      console.error(`❌ Screenshot failed for ${angle}:`, error);
+      throw error;
     } finally {
       await page.close();
     }
