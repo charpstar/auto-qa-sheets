@@ -15,7 +15,18 @@ export interface ScreenshotResult {
 export class ScreenshotProcessor {
   // Download GLB file from your existing API
   private async downloadGLB(articleId: string): Promise<Buffer> {
-    const response = await fetch("/api/download-glb", {
+    // Use full URL for server-side requests
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXT_PUBLIC_BASE_URL
+      ? process.env.NEXT_PUBLIC_BASE_URL
+      : "http://localhost:3000";
+
+    const url = `${baseUrl}/api/download-glb`;
+
+    console.log(`📥 Downloading GLB from: ${url}`);
+
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -24,8 +35,9 @@ export class ScreenshotProcessor {
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
       throw new Error(
-        `Failed to download GLB for article ${articleId}: ${response.statusText}`
+        `Failed to download GLB for article ${articleId}: ${response.status} ${response.statusText} - ${errorText}`
       );
     }
 
@@ -165,64 +177,76 @@ export class ScreenshotProcessor {
 
       // Step 1: Download GLB file
       logs.push("Downloading GLB file from Google Drive...");
-      const glbBuffer = await this.downloadGLB(job.articleId);
-      logs.push(`GLB file downloaded: ${glbBuffer.length} bytes`);
-
-      // Step 2: Convert to data URL
-      const glbDataURL = this.glbBufferToDataURL(glbBuffer);
-      logs.push("GLB converted to data URL for model-viewer");
-
-      // Step 3: Launch browser
-      logs.push("Launching headless browser...");
-      const browser = await puppeteer.launch({
-        executablePath: "/usr/bin/chromium-browser",
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--no-first-run",
-          "--no-zygote",
-        ],
-        headless: true,
-      });
-
       try {
-        // Step 4: Take screenshots from different angles
-        const angles = ["front", "back", "left", "right", "isometric"];
+        const glbBuffer = await this.downloadGLB(job.articleId);
+        logs.push(
+          `GLB file downloaded successfully: ${glbBuffer.length} bytes`
+        );
 
-        for (const angle of angles) {
-          logs.push(`Taking screenshot from ${angle} angle...`);
-          try {
-            const screenshotUrl = await this.takeScreenshot(
-              browser,
-              glbDataURL,
-              angle,
-              job.articleId
-            );
-            screenshots.push(screenshotUrl);
-            logs.push(`✅ ${angle} screenshot completed`);
-          } catch (error) {
-            const errorMsg = `Failed to capture ${angle} screenshot: ${
-              error instanceof Error ? error.message : "Unknown error"
-            }`;
-            logs.push(`❌ ${errorMsg}`);
-            console.error(errorMsg);
-            // Continue with other angles even if one fails
+        // Step 2: Convert to data URL
+        const glbDataURL = this.glbBufferToDataURL(glbBuffer);
+        logs.push("GLB converted to data URL for model-viewer");
+
+        // Step 3: Launch browser
+        logs.push("Launching headless browser...");
+        const browser = await puppeteer.launch({
+          executablePath: "/usr/bin/chromium-browser",
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--no-first-run",
+            "--no-zygote",
+          ],
+          headless: true,
+        });
+
+        try {
+          // Step 4: Take screenshots from different angles
+          const angles = ["front", "back", "left", "right", "isometric"];
+
+          for (const angle of angles) {
+            logs.push(`Taking screenshot from ${angle} angle...`);
+            try {
+              const screenshotUrl = await this.takeScreenshot(
+                browser,
+                glbDataURL,
+                angle,
+                job.articleId
+              );
+              screenshots.push(screenshotUrl);
+              logs.push(`✅ ${angle} screenshot completed: ${screenshotUrl}`);
+            } catch (error) {
+              const errorMsg = `Failed to capture ${angle} screenshot: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`;
+              logs.push(`❌ ${errorMsg}`);
+              console.error(errorMsg);
+              // Continue with other angles even if one fails
+            }
           }
+        } finally {
+          await browser.close();
+          logs.push("Browser closed");
         }
-      } finally {
-        await browser.close();
-        logs.push("Browser closed");
-      }
 
-      if (screenshots.length === 0) {
-        throw new Error("No screenshots were successfully captured");
-      }
+        if (screenshots.length === 0) {
+          throw new Error("No screenshots were successfully captured");
+        }
 
-      logs.push(
-        `Screenshot processing completed: ${screenshots.length} images generated`
-      );
+        logs.push(
+          `Screenshot processing completed: ${screenshots.length} images generated`
+        );
+      } catch (downloadError) {
+        const errorMsg = `GLB download failed: ${
+          downloadError instanceof Error
+            ? downloadError.message
+            : "Unknown error"
+        }`;
+        logs.push(`❌ ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
 
       return { screenshots, processingLogs: logs };
     } catch (error) {
