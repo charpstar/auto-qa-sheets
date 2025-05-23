@@ -57,10 +57,10 @@ export class ScreenshotProcessor {
     cameraAngle: string
   ): string {
     const cameraSettings = {
-      front: 'camera-orbit="0deg 99deg 150%"',
-      back: 'camera-orbit="180deg 9deg 150%"',
-      left: 'camera-orbit="-90deg 99deg 150%"',
-      right: 'camera-orbit="90deg 99deg 150%"',
+      front: 'camera-orbit="0deg 909deg 150%"',
+      back: 'camera-orbit="90deg 90deg 150%"',
+      left: 'camera-orbit="180deg 90deg 150%"',
+      right: 'camera-orbit="270deg 90deg 150%"',
       top: 'camera-orbit="0deg 0deg 150%"',
       isometric: 'camera-orbit="45deg 55deg 150%"',
     };
