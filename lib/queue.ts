@@ -13,6 +13,23 @@ export interface QAJob {
   maxRetries: number;
   error?: string;
   screenshots?: string[];
+  aiAnalysis?: {
+    differences: Array<{
+      renderIndex: number;
+      referenceIndex: number;
+      issues: string[];
+      bbox: [number, number, number, number];
+      severity: "low" | "medium" | "high";
+    }>;
+    summary: string;
+    status: "Approved" | "Not Approved";
+    scores?: {
+      silhouette: number;
+      proportion: number;
+      colorMaterial: number;
+      overall: number;
+    };
+  };
   processingLogs: string[];
 }
 
@@ -169,10 +186,15 @@ class JobQueue {
       job.status = "completed";
       job.completedAt = new Date().toISOString();
       job.screenshots = result.screenshots;
+      job.aiAnalysis = result.aiAnalysis;
       job.processingLogs.push(`Completed successfully at ${job.completedAt}`);
       job.processingLogs.push(
         `Generated ${result.screenshots.length} screenshots`
       );
+
+      if (result.aiAnalysis) {
+        job.processingLogs.push(`AI Analysis: ${result.aiAnalysis.status}`);
+      }
 
       console.log(`✅ Job completed: ${job.id}`);
     } catch (error) {
@@ -213,19 +235,70 @@ class JobQueue {
   // The actual QA processing logic
   private async executeQAProcessing(
     job: QAJob
-  ): Promise<{ screenshots: string[] }> {
-    // Import the screenshot processor
+  ): Promise<{ screenshots: string[]; aiAnalysis?: any }> {
+    // Import the screenshot processor and AI analyzer
     const { screenshotProcessor } = await import("./screenshotProcessor");
+    const { aiAnalyzer } = await import("./aiAnalysis");
 
-    // Process screenshots using the dedicated processor
-    const result = await screenshotProcessor.processScreenshots(job);
+    // Step 1: Process screenshots using the dedicated processor
+    job.processingLogs.push("Starting screenshot generation...");
+    const screenshotResult = await screenshotProcessor.processScreenshots(job);
 
     // Add processing logs to the job
-    job.processingLogs.push(...result.processingLogs);
+    job.processingLogs.push(...screenshotResult.processingLogs);
 
-    return {
-      screenshots: result.screenshots,
-    };
+    // Step 2: Run AI analysis on screenshots vs references
+    if (screenshotResult.screenshots.length > 0 && job.references.length > 0) {
+      job.processingLogs.push(
+        `Starting AI analysis with ${screenshotResult.screenshots.length} screenshots and ${job.references.length} references...`
+      );
+
+      try {
+        const analysisResult = await aiAnalyzer.analyzeScreenshots({
+          screenshots: screenshotResult.screenshots,
+          references: job.references,
+          articleId: job.articleId,
+          productName: job.productName,
+        });
+
+        job.processingLogs.push("✅ AI analysis completed successfully");
+        job.processingLogs.push(`Analysis status: ${analysisResult.status}`);
+        job.processingLogs.push(
+          `Found ${analysisResult.differences.length} differences`
+        );
+
+        if (analysisResult.scores) {
+          job.processingLogs.push(
+            `Similarity scores - Silhouette: ${analysisResult.scores.silhouette}%, Proportion: ${analysisResult.scores.proportion}%, Color/Material: ${analysisResult.scores.colorMaterial}%, Overall: ${analysisResult.scores.overall}%`
+          );
+        }
+
+        return {
+          screenshots: screenshotResult.screenshots,
+          aiAnalysis: analysisResult,
+        };
+      } catch (aiError) {
+        const errorMsg = `AI analysis failed: ${
+          aiError instanceof Error ? aiError.message : "Unknown error"
+        }`;
+        job.processingLogs.push(`❌ ${errorMsg}`);
+
+        // Continue without AI analysis rather than failing the entire job
+        job.processingLogs.push("⚠️ Continuing without AI analysis");
+        return {
+          screenshots: screenshotResult.screenshots,
+          aiAnalysis: null,
+        };
+      }
+    } else {
+      job.processingLogs.push(
+        "⚠️ Skipping AI analysis - no screenshots or references available"
+      );
+      return {
+        screenshots: screenshotResult.screenshots,
+        aiAnalysis: null,
+      };
+    }
   }
 
   // Clean up old completed/failed jobs

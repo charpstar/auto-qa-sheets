@@ -25,6 +25,23 @@ interface QueueJob {
   maxRetries: number;
   error?: string;
   screenshots?: string[];
+  aiAnalysis?: {
+    differences: Array<{
+      renderIndex: number;
+      referenceIndex: number;
+      issues: string[];
+      bbox: [number, number, number, number];
+      severity: "low" | "medium" | "high";
+    }>;
+    summary: string;
+    status: "Approved" | "Not Approved";
+    scores?: {
+      silhouette: number;
+      proportion: number;
+      colorMaterial: number;
+      overall: number;
+    };
+  };
   processingLogs: string[];
 }
 
@@ -80,6 +97,9 @@ const QAMonitorDashboard = () => {
 
   // Auto-refresh every 3 seconds
   useEffect(() => {
+    // Only run on client side
+    if (typeof window === "undefined") return;
+
     refreshData();
 
     if (autoRefresh) {
@@ -110,8 +130,12 @@ const QAMonitorDashboard = () => {
     );
   };
 
-  // Format timestamp
+  // Format timestamp safely for SSR
   const formatTime = (timestamp: string): string => {
+    // Only format on client side to avoid hydration mismatches
+    if (typeof window === "undefined") {
+      return timestamp; // Return raw timestamp on server
+    }
     return new Date(timestamp).toLocaleString();
   };
 
@@ -166,7 +190,10 @@ const QAMonitorDashboard = () => {
             </div>
           </div>
           <div className="text-sm text-gray-500 mt-2">
-            Last updated: {lastUpdate.toLocaleString()}
+            Last updated:{" "}
+            {typeof window !== "undefined"
+              ? lastUpdate.toLocaleString()
+              : lastUpdate.toISOString()}
           </div>
         </div>
 
@@ -354,6 +381,81 @@ const QAMonitorDashboard = () => {
                             +{job.screenshots.length - 6} more screenshots
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {job.aiAnalysis && (
+                      <div className="mt-3 bg-gray-50 p-3 rounded">
+                        <div className="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between">
+                          <span className="flex items-center">
+                            <span className="mr-1">🤖</span>
+                            AI Analysis
+                          </span>
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium ${
+                              job.aiAnalysis.status === "Approved"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {job.aiAnalysis.status}
+                          </span>
+                        </div>
+
+                        {job.aiAnalysis.scores && (
+                          <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
+                            <div>
+                              Silhouette: {job.aiAnalysis.scores.silhouette}%
+                            </div>
+                            <div>
+                              Proportion: {job.aiAnalysis.scores.proportion}%
+                            </div>
+                            <div>
+                              Color/Material:{" "}
+                              {job.aiAnalysis.scores.colorMaterial}%
+                            </div>
+                            <div>Overall: {job.aiAnalysis.scores.overall}%</div>
+                          </div>
+                        )}
+
+                        {job.aiAnalysis.differences.length > 0 && (
+                          <div className="mb-2">
+                            <div className="text-xs font-medium text-gray-600 mb-1">
+                              Issues Found ({job.aiAnalysis.differences.length}
+                              ):
+                            </div>
+                            {job.aiAnalysis.differences
+                              .slice(0, 3)
+                              .map((diff, index) => (
+                                <div
+                                  key={index}
+                                  className="text-xs text-gray-700 mb-1"
+                                >
+                                  <span
+                                    className={`inline-block w-2 h-2 rounded-full mr-1 ${
+                                      diff.severity === "high"
+                                        ? "bg-red-500"
+                                        : diff.severity === "medium"
+                                        ? "bg-yellow-500"
+                                        : "bg-green-500"
+                                    }`}
+                                  ></span>
+                                  {diff.issues[0]}
+                                </div>
+                              ))}
+                            {job.aiAnalysis.differences.length > 3 && (
+                              <div className="text-xs text-gray-500">
+                                +{job.aiAnalysis.differences.length - 3} more
+                                issues
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="text-xs text-gray-600">
+                          {job.aiAnalysis.summary.slice(0, 150)}
+                          {job.aiAnalysis.summary.length > 150 && "..."}
+                        </div>
                       </div>
                     )}
 
