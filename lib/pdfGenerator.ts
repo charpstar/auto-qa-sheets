@@ -164,9 +164,31 @@ export class PDFGenerator {
   ): Promise<Buffer> {
     return new Promise(async (resolve, reject) => {
       try {
-        // Get path to font (you may need to adjust this path)
+        // Create PDF document with more robust font handling
+        const pdfOptions: any = {
+          autoFirstPage: false,
+          size: [595.28, 841.89], // A4 in points
+          margins: {
+            top: 50,
+            bottom: 50,
+            left: 50,
+            right: 50,
+          },
+          info: {
+            Title: "3D Model QA Report",
+            Author: "3D Model QA Automator",
+          },
+        };
+
+        // Only set font if we have a custom font file
         const ttf = path.join(process.cwd(), "fonts", "Roboto-Regular.ttf");
-        let hasFont = fs.existsSync(ttf);
+        const hasFont = fs.existsSync(ttf);
+
+        if (hasFont) {
+          pdfOptions.font = ttf;
+        }
+
+        const doc = new PDFDocument(pdfOptions);
 
         // Prepare for logo
         const logoPath = path.join(this.tmpDir, "logo.png");
@@ -186,26 +208,12 @@ export class PDFGenerator {
           console.error("Failed to download logo:", logoErr);
         }
 
-        // Create PDF document
-        const doc = new PDFDocument({
-          autoFirstPage: false,
-          size: [595.28, 841.89], // A4 in points
-          margins: {
-            top: 50,
-            bottom: 50,
-            left: 50,
-            right: 50,
-          },
-          info: {
-            Title: "3D Model QA Report",
-            Author: "3D Model QA Automator",
-          },
-        });
-
-        // Register font if available
         if (hasFont) {
           doc.registerFont("MainFont", ttf);
           doc.font("MainFont");
+        } else {
+          // Use built-in fonts that are always available
+          doc.font("Helvetica");
         }
 
         // Collect PDF data
