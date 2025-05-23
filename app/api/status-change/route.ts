@@ -1,7 +1,7 @@
 //app\api\status-change\route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import globalQueue from "lib/queue";
+import globalQueue, { QAJobInput } from "lib/queue";
 
 // In-memory storage for recent status changes
 const recentChanges: any[] = [];
@@ -105,11 +105,15 @@ export async function POST(request: NextRequest) {
 
       try {
         // Add job to the processing queue
-        queueJob = globalQueue.addJob({
+        const jobInput: QAJobInput = {
           articleId: articleId,
           productName: productName,
           references: references,
-        });
+          sheetId: sheetId,
+          rowIndex: rowIndex,
+        };
+
+        queueJob = globalQueue.addJob(jobInput);
 
         console.log(`✅ Job added to queue: ${queueJob.id}`);
         console.log(`📊 Queue status:`, globalQueue.getQueueStatus());

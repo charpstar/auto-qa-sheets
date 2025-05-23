@@ -1,5 +1,13 @@
 // lib/queue.ts
 
+export interface QAJobInput {
+  articleId: string;
+  productName: string;
+  references: string[];
+  sheetId?: string;
+  rowIndex?: number;
+}
+
 export interface QAJob {
   id: string;
   articleId: string;
@@ -31,6 +39,8 @@ export interface QAJob {
     };
   };
   pdfUrl?: string;
+  sheetId?: string;
+  rowIndex?: number;
   processingLogs: string[];
 }
 
@@ -42,11 +52,7 @@ class JobQueue {
   private readonly MAX_JOBS = 100;
 
   // Add a new job to the queue
-  addJob(jobData: {
-    articleId: string;
-    productName: string;
-    references: string[];
-  }): QAJob {
+  addJob(jobData: QAJobInput): QAJob {
     const jobId = `${jobData.articleId}-${Date.now()}-${Math.random()
       .toString(36)
       .substr(2, 6)}`;
@@ -72,6 +78,8 @@ class JobQueue {
       createdAt: new Date().toISOString(),
       retries: 0,
       maxRetries: 3,
+      sheetId: jobData.sheetId,
+      rowIndex: jobData.rowIndex,
       processingLogs: [`Job created for Article ID: ${jobData.articleId}`],
     };
 
@@ -202,6 +210,21 @@ class JobQueue {
         job.processingLogs.push(`PDF Report: ${result.pdfUrl}`);
       }
 
+      // Update Google Sheet with results
+      if (job.sheetId && job.rowIndex && result.pdfUrl) {
+        job.processingLogs.push("Updating Google Sheet with PDF link...");
+        try {
+          await this.updateGoogleSheet(job);
+          job.processingLogs.push("✅ Google Sheet updated successfully");
+        } catch (sheetError) {
+          const errorMsg = `Sheet update failed: ${
+            sheetError instanceof Error ? sheetError.message : "Unknown error"
+          }`;
+          job.processingLogs.push(`⚠️ ${errorMsg}`);
+          // Don't fail the entire job if sheet update fails
+        }
+      }
+
       console.log(`✅ Job completed: ${job.id}`);
     } catch (error) {
       this.handleJobError(
@@ -209,6 +232,48 @@ class JobQueue {
         error instanceof Error ? error.message : "Unknown error"
       );
     }
+  }
+
+  // Update Google Sheet with QA results
+  private async updateGoogleSheet(job: QAJob): Promise<void> {
+    if (!job.sheetId || !job.rowIndex) {
+      throw new Error("Missing sheet information for update");
+    }
+
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXT_PUBLIC_BASE_URL
+      ? process.env.NEXT_PUBLIC_BASE_URL
+      : "http://localhost:3000";
+
+    const updatePayload = {
+      articleId: job.articleId,
+      sheetId: job.sheetId,
+      rowIndex: job.rowIndex,
+      pdfUrl: job.pdfUrl,
+      status: job.aiAnalysis?.status,
+      summary: job.aiAnalysis?.summary,
+    };
+
+    console.log("📊 Calling sheet update API with:", updatePayload);
+
+    const response = await fetch(`${baseUrl}/api/update-sheet`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(updatePayload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Sheet update API failed: ${response.status} - ${errorText}`
+      );
+    }
+
+    const result = await response.json();
+    console.log("✅ Sheet update API response:", result);
   }
 
   // Handle job errors and retries
