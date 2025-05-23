@@ -57,12 +57,12 @@ export class ScreenshotProcessor {
     cameraAngle: string
   ): string {
     const cameraSettings = {
-      front: 'camera-orbit="0deg 75deg 4m"',
-      back: 'camera-orbit="180deg 75deg 4m"',
-      left: 'camera-orbit="-90deg 75deg 4m"',
-      right: 'camera-orbit="90deg 75deg 4m"',
-      top: 'camera-orbit="0deg 0deg 4m"',
-      isometric: 'camera-orbit="45deg 55deg 4m"',
+      front: 'camera-orbit="0deg 99deg 150%"',
+      back: 'camera-orbit="180deg 9deg 150%"',
+      left: 'camera-orbit="-90deg 99deg 150%"',
+      right: 'camera-orbit="90deg 99deg 150%"',
+      top: 'camera-orbit="0deg 0deg 150%"',
+      isometric: 'camera-orbit="45deg 55deg 150%"',
     };
 
     return `
@@ -204,7 +204,7 @@ export class ScreenshotProcessor {
 
         try {
           // Step 4: Take screenshots from different angles
-          const angles = ["front", "back", "left", "right", "isometric"];
+          const angles = ["front", "back", "left", "right", "top"];
 
           for (const angle of angles) {
             logs.push(`Taking screenshot from ${angle} angle...`);
