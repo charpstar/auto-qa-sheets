@@ -1,4 +1,7 @@
+//app\api\status-change\route.ts
+
 import { NextRequest, NextResponse } from "next/server";
+import globalQueue from "lib/queue";
 
 // In-memory storage for recent status changes
 const recentChanges: any[] = [];
@@ -91,6 +94,8 @@ export async function POST(request: NextRequest) {
     console.log(`🔧 Trigger Type: ${triggerType}`);
     console.log("=".repeat(50));
 
+    let queueJob = null;
+
     // Check if this should trigger QA processing
     if (statusChange.shouldStartQA) {
       console.log("🚀 QA PROCESSING SHOULD START!");
@@ -98,7 +103,20 @@ export async function POST(request: NextRequest) {
       console.log(`   Product: ${productName}`);
       console.log(`   With ${references.length} reference images`);
 
-      // TODO: Later integrate with your model-viewer logic here
+      try {
+        // Add job to the processing queue
+        queueJob = globalQueue.addJob({
+          articleId: articleId,
+          productName: productName,
+          references: references,
+        });
+
+        console.log(`✅ Job added to queue: ${queueJob.id}`);
+        console.log(`📊 Queue status:`, globalQueue.getQueueStatus());
+      } catch (queueError) {
+        console.error("❌ Error adding job to queue:", queueError);
+        // Don't fail the entire request if queue fails
+      }
     }
 
     console.log(`📊 Total stored changes: ${recentChanges.length}`);
@@ -112,6 +130,15 @@ export async function POST(request: NextRequest) {
       shouldStartQA: statusChange.shouldStartQA,
       timestamp: statusChange.timestamp,
       changeId: statusChange.id,
+      // Include queue job info if created
+      queueJob: queueJob
+        ? {
+            id: queueJob.id,
+            status: queueJob.status,
+            createdAt: queueJob.createdAt,
+          }
+        : null,
+      queueStatus: globalQueue.getQueueStatus(),
     });
 
     return addCorsHeaders(response);
@@ -166,6 +193,8 @@ export async function GET(request: NextRequest) {
       recentChangesCount: recentChanges.length,
       recentChanges: limitedChanges,
       hasMore: recentChanges.length > limit,
+      // Include current queue status
+      queueStatus: globalQueue.getQueueStatus(),
     });
 
     return addCorsHeaders(response);

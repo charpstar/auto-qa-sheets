@@ -1,3 +1,5 @@
+//app\api\test-model-viewer\route.ts
+
 import { NextResponse } from "next/server";
 import puppeteer from "puppeteer";
 import { put } from "@vercel/blob";
