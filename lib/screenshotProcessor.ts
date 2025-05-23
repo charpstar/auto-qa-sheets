@@ -120,95 +120,28 @@ export class ScreenshotProcessor {
       await page.setViewport({ width: 800, height: 600 });
 
       const htmlContent = this.generateModelViewerHTML(glbDataURL, angle);
+      await page.setContent(htmlContent, { waitUntil: "networkidle0" });
 
-      // Set longer timeouts for model loading
-      await page.setContent(htmlContent, {
-        waitUntil: "domcontentloaded", // Changed from networkidle0 to be less strict
-        timeout: 60000, // Increased timeout to 60 seconds
-      });
-
-      console.log(
-        `📸 Content loaded for ${angle}, waiting for model-viewer...`
-      );
-
-      // Wait for model-viewer element with longer timeout
+      // Wait for model-viewer to load and render with increased timeout
       await page.waitForSelector("model-viewer", { timeout: 60000 });
 
-      console.log(
-        `📸 Model-viewer found for ${angle}, waiting for model to load...`
-      );
-
-      // Enhanced model loading wait with multiple strategies
+      // Additional wait for model to fully load
       await page.evaluate(() => {
         return new Promise((resolve) => {
           const modelViewer = document.querySelector("model-viewer") as any;
-
-          if (!modelViewer) {
-            console.log("No model-viewer found");
-            setTimeout(() => resolve(true), 5000); // Fallback timeout
-            return;
-          }
-
-          let resolved = false;
-          const resolveOnce = () => {
-            if (!resolved) {
-              resolved = true;
-              resolve(true);
-            }
-          };
-
-          // Strategy 1: Check if model is already loaded
-          if (modelViewer.modelIsVisible) {
-            console.log("Model already visible");
-            resolveOnce();
-            return;
-          }
-
-          // Strategy 2: Listen for load event
-          const onLoad = () => {
-            console.log("Model load event fired");
-            resolveOnce();
-          };
-
-          // Strategy 3: Listen for model-visibility event
-          const onModelVisibility = () => {
-            console.log("Model visibility event fired");
-            resolveOnce();
-          };
-
-          modelViewer.addEventListener("load", onLoad);
-          modelViewer.addEventListener("model-visibility", onModelVisibility);
-
-          // Strategy 4: Fallback timeout
-          setTimeout(() => {
-            console.log("Model loading timeout reached, proceeding anyway");
-            resolveOnce();
-          }, 15000); // 15 second fallback
-
-          // Strategy 5: Check periodically if model becomes visible
-          const checkInterval = setInterval(() => {
+          if (modelViewer) {
             if (modelViewer.modelIsVisible) {
-              console.log("Model became visible during polling");
-              clearInterval(checkInterval);
-              resolveOnce();
+              resolve(true);
+            } else {
+              modelViewer.addEventListener("load", () => resolve(true));
+              // Fallback timeout
+              setTimeout(() => resolve(true), 10000);
             }
-          }, 1000);
-
-          // Clean up interval after timeout
-          setTimeout(() => {
-            clearInterval(checkInterval);
-          }, 15000);
+          } else {
+            setTimeout(() => resolve(true), 3000);
+          }
         });
       });
-
-      console.log(
-        `📸 Model loaded for ${angle}, waiting additional time for rendering...`
-      );
-
-      // Additional wait for rendering to stabilize
-      await page.waitForTimeout(3000);
-
-      console.log(`📸 Taking screenshot for ${angle}...`);
 
       // Take screenshot
       const screenshotBuffer = await page.screenshot({
@@ -229,9 +162,6 @@ export class ScreenshotProcessor {
 
       console.log(`✅ Screenshot uploaded: ${angle} - ${url}`);
       return url;
-    } catch (error) {
-      console.error(`❌ Screenshot failed for ${angle}:`, error);
-      throw error;
     } finally {
       await page.close();
     }
@@ -249,76 +179,64 @@ export class ScreenshotProcessor {
 
       // Step 1: Download GLB file
       logs.push("Downloading GLB file from Google Drive...");
+      const glbBuffer = await this.downloadGLB(job.articleId);
+      logs.push(`GLB file downloaded successfully: ${glbBuffer.length} bytes`);
+
+      // Step 2: Convert to data URL
+      const glbDataURL = this.glbBufferToDataURL(glbBuffer);
+      logs.push("GLB converted to data URL for model-viewer");
+
+      // Step 3: Launch browser
+      logs.push("Launching headless browser...");
+      const browser = await puppeteer.launch({
+        executablePath: "/usr/bin/chromium-browser",
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--no-first-run",
+          "--no-zygote",
+        ],
+        headless: true,
+      });
+
       try {
-        const glbBuffer = await this.downloadGLB(job.articleId);
-        logs.push(
-          `GLB file downloaded successfully: ${glbBuffer.length} bytes`
-        );
+        // Step 4: Take screenshots from different angles
+        const angles = ["front", "back", "left", "right", "isometric"];
 
-        // Step 2: Convert to data URL
-        const glbDataURL = this.glbBufferToDataURL(glbBuffer);
-        logs.push("GLB converted to data URL for model-viewer");
-
-        // Step 3: Launch browser
-        logs.push("Launching headless browser...");
-        const browser = await puppeteer.launch({
-          executablePath: "/usr/bin/chromium-browser",
-          args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--no-first-run",
-            "--no-zygote",
-          ],
-          headless: true,
-        });
-
-        try {
-          // Step 4: Take screenshots from different angles
-          const angles = ["front", "back", "left", "right", "isometric"];
-
-          for (const angle of angles) {
-            logs.push(`Taking screenshot from ${angle} angle...`);
-            try {
-              const screenshotUrl = await this.takeScreenshot(
-                browser,
-                glbDataURL,
-                angle,
-                job.articleId
-              );
-              screenshots.push(screenshotUrl);
-              logs.push(`✅ ${angle} screenshot completed: ${screenshotUrl}`);
-            } catch (error) {
-              const errorMsg = `Failed to capture ${angle} screenshot: ${
-                error instanceof Error ? error.message : "Unknown error"
-              }`;
-              logs.push(`❌ ${errorMsg}`);
-              console.error(errorMsg);
-              // Continue with other angles even if one fails
-            }
+        for (const angle of angles) {
+          logs.push(`Taking screenshot from ${angle} angle...`);
+          try {
+            const screenshotUrl = await this.takeScreenshot(
+              browser,
+              glbDataURL,
+              angle,
+              job.articleId
+            );
+            screenshots.push(screenshotUrl);
+            logs.push(`✅ ${angle} screenshot completed: ${screenshotUrl}`);
+          } catch (error) {
+            const errorMsg = `Failed to capture ${angle} screenshot: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`;
+            logs.push(`❌ ${errorMsg}`);
+            console.error(errorMsg);
+            // Continue with other angles even if one fails
           }
-        } finally {
-          await browser.close();
-          logs.push("Browser closed");
         }
-
-        if (screenshots.length === 0) {
-          throw new Error("No screenshots were successfully captured");
-        }
-
-        logs.push(
-          `Screenshot processing completed: ${screenshots.length} images generated`
-        );
-      } catch (downloadError) {
-        const errorMsg = `GLB download failed: ${
-          downloadError instanceof Error
-            ? downloadError.message
-            : "Unknown error"
-        }`;
-        logs.push(`❌ ${errorMsg}`);
-        throw new Error(errorMsg);
+      } finally {
+        await browser.close();
+        logs.push("Browser closed");
       }
+
+      if (screenshots.length === 0) {
+        throw new Error("No screenshots were successfully captured");
+      }
+
+      logs.push(
+        `Screenshot processing completed: ${screenshots.length} images generated`
+      );
 
       return { screenshots, processingLogs: logs };
     } catch (error) {
