@@ -335,23 +335,31 @@ export class PDFGenerator {
         };
 
         const stats = job.modelStats;
+        console.log("🔍 DEBUG - Model stats:", stats);
+        console.log("🔍 DEBUG - Job keys:", Object.keys(job));
+
         if (stats) {
-          addPropertyLine("Polycount", stats.vertices, 150000);
-          addPropertyLine("Triangles", stats.triangles);
-          addPropertyLine("Mesh Count", stats.meshCount, 5);
-          addPropertyLine("Material Count", stats.materialCount, 5);
-          addPropertyLine("Double-sided Materials", stats.doubleSidedCount, 0);
+          addPropertyLine("Polycount", stats.vertices || 0, 150000);
+          addPropertyLine("Triangles", stats.triangles || 0);
+          addPropertyLine("Mesh Count", stats.meshCount || 0, 5);
+          addPropertyLine("Material Count", stats.materialCount || 0, 5);
+          addPropertyLine(
+            "Double-sided Materials",
+            stats.doubleSidedCount || 0,
+            0
+          );
           addPropertyLine(
             "File Size",
-            parseFloat((stats.fileSize / (1024 * 1024)).toFixed(2)),
+            parseFloat(((stats.fileSize || 0) / (1024 * 1024)).toFixed(2)),
             15,
             "MB"
           );
         } else {
+          console.log("❌ No model stats available - using placeholder values");
           const properties = [
-            "• Polycount: 150,000",
-            "• Material Count: 5",
-            "• File Size: 5.2MB",
+            "• Polycount: N/A",
+            "• Material Count: N/A",
+            "• File Size: N/A",
           ];
           properties.forEach((prop) => {
             doc.text(prop);
@@ -373,7 +381,13 @@ export class PDFGenerator {
           doc.moveDown(1);
           doc.fontSize(12).text("Status:");
           doc.moveDown(0.5);
+
+          // Color code the status
+          const statusColor =
+            job.aiAnalysis.status === "Approved" ? "#34a853" : "#ea4335";
+          doc.fillColor(statusColor);
           doc.fontSize(11).text(job.aiAnalysis.status);
+          doc.fillColor("#000000"); // Reset to black
         } else {
           doc.fontSize(11).text("No AI analysis available.");
         }
