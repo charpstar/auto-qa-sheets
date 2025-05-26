@@ -38,24 +38,24 @@ export class AIAnalyzer {
 
   // Create the system prompt (adapted from your existing code)
   private createSystemPrompt(): string {
-    return `You are a 3D QA specialist. Compare all rendered screenshots against all reference images. Use simple, clear English.
+    return `You are a 3D QA specialist. Compare all model screenshots against all reference images. Use simple, clear English.
 
 ‼️ CRITICAL - READ CAREFULLY ‼️
 PERSPECTIVE & VIEW MATCHING:
 • ONLY compare views showing the SAME PERSPECTIVE and ANGLE of the product
-• If the render shows a different side or angle than the reference, DO NOT compare them at all
+• If the 3D model shows a different side or angle than the reference, DO NOT compare them at all
 • Different sides of the product should NEVER be compared (e.g., front view vs. side view)
 • If two images show the same object from different angles, they MUST be skipped
 • Example of INCORRECT comparison: Noting that a logo appears on the side in one image but on the front in another
 
 Guidelines:
-1. Renders come from <model-viewer>—perfect fidelity is not expected.
+1. Model come from <model-viewer>—perfect fidelity is not expected.
 2. References are human-crafted—focus on real discrepancies.
 3. Analyze geometry, proportions, textures, and material colors for each pairing.
-4. Be extremely specific. E.g.: 'Render shows larger marble veins in slate gray; reference has finer veins in gold.'
-5. Each issue must state: what's in the render, what's in the reference, the exact difference, and how to correct it.
+4. Be extremely specific. E.g.: 'Model shows larger marble veins in slate gray; reference has finer veins in gold.'
+5. Each issue must state: what's in the Model, what's in the reference, the exact difference, and how to correct it.
 ‼️IMPORTANT‼️
-6. Provide a pixel bbox [x,y,width,height] relative to the render image to indicate where to annotate.
+6. Provide a pixel bbox [x,y,width,height] relative to the Model image to indicate where to annotate.
 7. Assign severity: 'low', 'medium', or 'high'.
 8. After listing issues, include similarity % scores for silhouette, proportion, color/material, and overall. Add this in summary. If all scores are >90%, mark status as 'Approved', otherwise mark as 'Not Approved'.
 ‼️IMPORTANT‼️
@@ -65,13 +65,13 @@ Guidelines:
 11. Group comments about the same images in the same section.
 
 ‼️ INCORRECT EXAMPLES (DO NOT DO THESE) ‼️
-• 'Render shows side logo as "NGS"; reference shows different positioning and size' - WRONG! These are different views
-• 'Render shows the product from the front; reference shows it from the back' - WRONG! Skip this comparison
-• 'The button is visible in the render but not in the reference' - WRONG! Different perspectives
+• 'Model shows side logo as "NGS"; reference shows different positioning and size' - WRONG! These are different views
+• 'Model shows the product from the front; reference shows it from the back' - WRONG! Skip this comparison
+• 'The button is visible in the Model but not in the reference' - WRONG! Different perspectives
 
 ‼️ CORRECT EXAMPLES ‼️
-• 'Render shows yellow cushion fabric; reference shows white cushion fabric' - CORRECT (same view, actual difference)
-• 'Render shows smoother texture; reference shows more detailed grain' - CORRECT (same view, actual difference)
+• 'Model shows yellow cushion fabric; reference shows white cushion fabric' - CORRECT (same view, actual difference)
+• 'Model shows smoother texture; reference shows more detailed grain' - CORRECT (same view, actual difference)
 
 Output *only* a single valid JSON object, for example:
 {
@@ -80,7 +80,7 @@ Output *only* a single valid JSON object, for example:
       "renderIndex": 0,
       "referenceIndex": 1,
       "issues": [
-        "Render shows marble texture more saturated red; reference is muted brown."
+        "Model shows marble texture more saturated red; reference is muted brown."
       ],
       "bbox": [120, 240, 300, 180],
       "severity": "medium"

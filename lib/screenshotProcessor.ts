@@ -68,7 +68,7 @@ export class ScreenshotProcessor {
     return `
       <html>
         <head>
-          <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+          <script type="module" src="https://cdn2.charpstar.net/AR/Synsam/model-viewer.js"></script>
           <style>
             body { 
               margin: 0; 
