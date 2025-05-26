@@ -176,12 +176,28 @@ export class PDFGenerator {
 
       console.log("🔍 DEBUG - FULL RESPONSE:");
       console.log(JSON.stringify(result, null, 2));
-      console.log("🔍 DEBUG - Response keys:", Object.keys(result));
-      console.log("🔍 DEBUG - Has images property:", !!result.images);
-      console.log("🔍 DEBUG - Images is array:", Array.isArray(result.images));
-      console.log("🔍 DEBUG - Images length:", result.images?.length);
 
       if (!Array.isArray(result.images) || result.images.length === 0) {
+        console.warn(
+          "⚠️ No images in response, checking if files were saved to disk..."
+        );
+
+        // Check if annotation service saved files to disk (like in working code)
+        if (fs.existsSync(outDir)) {
+          const savedFiles = fs
+            .readdirSync(outDir)
+            .filter((f) => f.endsWith(".png"));
+          console.log("🔍 Files found on disk:", savedFiles);
+
+          if (savedFiles.length > 0) {
+            const annotatedPaths = savedFiles.map((f) => path.join(outDir, f));
+            console.log(
+              `✅ Found ${annotatedPaths.length} annotated images on disk`
+            );
+            return annotatedPaths;
+          }
+        }
+
         console.error("🔍 FULL RESULT OBJECT:", result);
         throw new Error("No annotated images returned from annotator.");
       }
@@ -209,6 +225,19 @@ export class PDFGenerator {
           annotatedPaths.push(savePath);
         } catch (err) {
           console.error(`Failed to save image ${img.filename}`, err);
+        }
+      }
+
+      // FALLBACK: Check filesystem like working code does
+      if (annotatedPaths.length === 0) {
+        console.log("🔍 No images from response, checking filesystem...");
+        const savedFiles = fs
+          .readdirSync(outDir)
+          .filter((f) => f.endsWith(".png"));
+        if (savedFiles.length > 0) {
+          const diskPaths = savedFiles.map((f) => path.join(outDir, f));
+          console.log(`✅ Found ${diskPaths.length} annotated images on disk`);
+          return diskPaths;
         }
       }
 
