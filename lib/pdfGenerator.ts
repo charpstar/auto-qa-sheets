@@ -112,10 +112,18 @@ export class PDFGenerator {
     try {
       // Combine screenshots and references for annotation - SAME AS REFERENCE
       const allUrls = [...job.screenshots, ...job.references];
+      console.log("🔍 DEBUG - All URLs:", allUrls);
+
       const allPaths = await this.downloadImages(allUrls);
+      console.log("🔍 DEBUG - Downloaded paths:", allPaths);
 
       // Format the diff for the annotation service
       const formattedDiff = this.formatAnalysisForAnnotator(job);
+      console.log(
+        "🔍 DEBUG - Formatted diff:",
+        JSON.stringify(formattedDiff, null, 2)
+      );
+
       const diffPath = path.join(this.tmpDir, "diff.json");
       fs.writeFileSync(diffPath, JSON.stringify(formattedDiff, null, 2));
 
@@ -129,6 +137,16 @@ export class PDFGenerator {
         const filename = path.basename(p);
         return { filename, data: base64 };
       });
+
+      console.log("🔍 DEBUG - Image payload count:", imagePayload.length);
+      console.log(
+        "🔍 DEBUG - Image filenames:",
+        imagePayload.map((img) => img.filename)
+      );
+      console.log(
+        "🔍 DEBUG - Diff file content:",
+        fs.readFileSync(diffPath, "utf-8")
+      );
 
       // Make the request EXACTLY like reference code
       const response = await fetch("http://45.76.82.207:8080/annotate", {
@@ -151,7 +169,15 @@ export class PDFGenerator {
       // Parse JSON result - SAME AS REFERENCE
       const result = await response.json();
 
+      console.log("🔍 DEBUG - FULL RESPONSE:");
+      console.log(JSON.stringify(result, null, 2));
+      console.log("🔍 DEBUG - Response keys:", Object.keys(result));
+      console.log("🔍 DEBUG - Has images property:", !!result.images);
+      console.log("🔍 DEBUG - Images is array:", Array.isArray(result.images));
+      console.log("🔍 DEBUG - Images length:", result.images?.length);
+
       if (!Array.isArray(result.images) || result.images.length === 0) {
+        console.error("🔍 FULL RESULT OBJECT:", result);
         throw new Error("No annotated images returned from annotator.");
       }
 
