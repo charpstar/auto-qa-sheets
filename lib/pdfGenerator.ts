@@ -404,7 +404,7 @@ export class PDFGenerator {
             doc.moveDown(0.5);
             doc.fontSize(10);
 
-            job.aiAnalysis.differences.forEach((diff, index) => {
+            job.aiAnalysis.differences.forEach((diff: any, index: number) => {
               const severityColor =
                 diff.severity === "high"
                   ? "#ea4335"
