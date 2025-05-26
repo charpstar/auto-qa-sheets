@@ -77,7 +77,7 @@ export class ScreenshotProcessor {
     return `
       <html>
         <head>
-          <script type="module" src="https://cdn2.charpstar.net/QATool/model-viewer-qa-sheets.js"></script>
+          <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
           <style>
             body { 
               margin: 0; 
