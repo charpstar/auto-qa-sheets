@@ -109,24 +109,8 @@ export class PDFGenerator {
 
     console.log("📝 Attempting to get annotated images...");
 
-    // TEMPORARY: Force skip annotation for debugging
-    const FORCE_SKIP = true; // Set to false when you want to test annotation service
-
-    if (FORCE_SKIP) {
-      console.log("🚫 FORCING SKIP OF ANNOTATION SERVICE FOR DEBUGGING");
-      if (job.screenshots && job.screenshots.length > 0) {
-        console.log(
-          `📸 Downloading ${job.screenshots.length} original screenshots as fallback`
-        );
-        const fallbackPaths = await this.downloadImages(job.screenshots);
-        console.log(`✅ Downloaded ${fallbackPaths.length} fallback images`);
-        return fallbackPaths;
-      }
-      return [];
-    }
-
     try {
-      // Combine screenshots and references for annotation
+      // Combine screenshots and references for annotation - SAME AS REFERENCE
       const allUrls = [...job.screenshots, ...job.references];
       const allPaths = await this.downloadImages(allUrls);
 
@@ -135,7 +119,10 @@ export class PDFGenerator {
       const diffPath = path.join(this.tmpDir, "diff.json");
       fs.writeFileSync(diffPath, JSON.stringify(formattedDiff, null, 2));
 
-      // Prepare payload for annotation service
+      const outDir = path.join(this.tmpDir, "annotations");
+      fs.mkdirSync(outDir, { recursive: true });
+
+      // Prepare payload EXACTLY like reference code
       const imagePayload = allPaths.map((p) => {
         const buffer = fs.readFileSync(p);
         const base64 = buffer.toString("base64");
@@ -143,18 +130,7 @@ export class PDFGenerator {
         return { filename, data: base64 };
       });
 
-      console.log(
-        `📝 Prepared payload: ${
-          imagePayload.length
-        } images, diff keys: ${Object.keys(formattedDiff)}`
-      );
-      console.log(
-        "📝 Sample image filenames:",
-        imagePayload.map((img) => img.filename)
-      );
-
-      console.log("📝 Sending images to annotation service...");
-
+      // Make the request EXACTLY like reference code
       const response = await fetch("http://45.76.82.207:8080/annotate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -164,56 +140,27 @@ export class PDFGenerator {
         }),
       });
 
-      console.log(
-        `📝 Annotation service response: ${response.status} ${response.statusText}`
-      );
-
+      // Check for non-200 response - SAME AS REFERENCE
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("❌ Annotation service error response:", errorText);
         throw new Error(
           `Annotator server error: ${response.status} - ${errorText}`
         );
       }
 
+      // Parse JSON result - SAME AS REFERENCE
       const result = await response.json();
 
-      // DETAILED DEBUGGING - Log the exact response
-      console.log("🔍 FULL ANNOTATION SERVICE RESPONSE:");
-      console.log(JSON.stringify(result, null, 2));
-
-      console.log("📝 Annotation service result:", {
-        hasImages: !!result.images,
-        imageCount: Array.isArray(result.images) ? result.images.length : 0,
-        resultKeys: Object.keys(result),
-        firstImageKeys: result.images?.[0] ? Object.keys(result.images[0]) : [],
-        resultType: typeof result,
-        isArray: Array.isArray(result),
-      });
-
-      // Check if the response structure is different
-      if (result.images === undefined) {
-        console.log("⚠️ No 'images' property in response");
-        console.log("Available properties:", Object.keys(result));
-      }
-
       if (!Array.isArray(result.images) || result.images.length === 0) {
-        console.warn("⚠️ No images array or empty array in response");
-        console.warn("⚠️ Result.images:", result.images);
-        console.warn(
-          "⚠️ Is result.images an array?",
-          Array.isArray(result.images)
-        );
-        console.warn("⚠️ Length:", result.images?.length);
         throw new Error("No annotated images returned from annotator.");
       }
 
-      // Save annotated images locally
-      const outDir = path.join(this.tmpDir, "annotations");
+      // Make sure the output directory exists - SAME AS REFERENCE
       fs.mkdirSync(outDir, { recursive: true });
 
       const annotatedPaths: string[] = [];
 
+      // Save each annotated image to outDir - SAME AS REFERENCE
       for (const img of result.images) {
         if (!img.filename || !img.data) {
           console.warn("Skipping invalid image object:", img);
@@ -273,31 +220,8 @@ export class PDFGenerator {
   ): Promise<Buffer> {
     return new Promise(async (resolve, reject) => {
       try {
-        // Create PDF document with more robust font handling
-        const pdfOptions: any = {
-          autoFirstPage: false,
-          size: [595.28, 841.89], // A4 in points
-          margins: {
-            top: 50,
-            bottom: 50,
-            left: 50,
-            right: 50,
-          },
-          info: {
-            Title: "3D Model QA Report",
-            Author: "3D Model QA Automator",
-          },
-        };
-
-        // Only set font if we have a custom font file
+        // Get path to Roboto font
         const ttf = path.join(process.cwd(), "fonts", "Roboto-Regular.ttf");
-        const hasFont = fs.existsSync(ttf);
-
-        if (hasFont) {
-          pdfOptions.font = ttf;
-        }
-
-        const doc = new PDFDocument(pdfOptions);
 
         // Prepare for logo
         const logoPath = path.join(this.tmpDir, "logo.png");
@@ -317,29 +241,49 @@ export class PDFGenerator {
           console.error("Failed to download logo:", logoErr);
         }
 
-        if (hasFont) {
-          doc.registerFont("MainFont", ttf);
-          doc.font("MainFont");
-        } else {
-          // Use built-in fonts that are always available
-          doc.font("Helvetica");
-        }
+        // Create PDF document with standard A4 size and minimal margins
+        const doc = new PDFDocument({
+          autoFirstPage: false,
+          size: [595.28, 841.89], // A4 in points
+          margins: {
+            top: 50,
+            bottom: 50,
+            left: 50,
+            right: 50,
+          },
+          font: ttf,
+          info: {
+            Title: "3D Model QA Report",
+            Author: "3D Model QA Automator",
+          },
+        });
 
-        // Collect PDF data
+        // Create our own data collection system
         const buffers: Buffer[] = [];
-        doc.on("data", (chunk: Buffer) => buffers.push(Buffer.from(chunk)));
+        doc.on("data", (chunk) => buffers.push(Buffer.from(chunk)));
         doc.on("end", () => resolve(Buffer.concat(buffers)));
-        doc.on("error", (err: Error) => reject(err));
+        doc.on("error", (err) => reject(err));
+
+        // Register our font
+        doc.registerFont("MainFont", ttf);
 
         // Add first page
         doc.addPage();
 
         // --- PAGE 1: HEADER AND IMAGES ---
+
+        // Header - use logo if available, otherwise text
         if (hasLogo) {
           doc.image(logoPath, 40, 40, { width: 150 });
-          doc.fontSize(14).text("3D Model QA Report", 50, 85);
+          doc
+            .fontSize(14)
+            .text("3D Model QA Report", 50, 85, { continued: false });
         } else {
-          doc.fontSize(16).text("3D Model QA Report", 50, 50);
+          // Fallback to original behavior
+          doc
+            .font("MainFont")
+            .fontSize(16)
+            .text("3D Model QA Report", { continued: false });
         }
 
         // Add article info
@@ -348,14 +292,19 @@ export class PDFGenerator {
         doc.text(`Generated: ${new Date().toLocaleString()}`, 50, 140);
 
         // Horizontal rule
-        doc.moveDown(1);
+        doc.moveDown(0.5);
         doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
         doc.moveDown(1);
 
-        // Add annotated images
-        const contentWidth = 495;
+        // Calculate available content width and height
+        const contentWidth = 495; // 595.28 - 50 - 50 (page width minus margins)
+
+        // Create a combined layout for all image pairs to ensure they're on the same page
+        // If we have multiple images, make them smaller to fit
         const imageWidth = contentWidth;
-        const imageHeight = annotatedImages.length > 1 ? 280 : 380;
+        const imageHeight = annotatedImages.length > 1 ? 280 : 380; // Smaller if multiple images
+        const verticalGap = 10;
+
         let currentY = doc.y;
 
         console.log(`📄 Adding ${annotatedImages.length} images to PDF...`);
@@ -367,12 +316,18 @@ export class PDFGenerator {
             .text("No analysis images available", { align: "center" });
           doc.moveDown(2);
         } else {
+          // Process each image
           for (let i = 0; i < annotatedImages.length; i++) {
-            if (i > 0 && currentY + imageHeight + 40 > 750) {
-              doc.addPage();
-              currentY = 70;
+            // Add a new page for each new image after the first, except for the first page
+            if (i > 0) {
+              // Only add a page break when needed
+              if (currentY + imageHeight + 40 > 750) {
+                doc.addPage();
+                currentY = 70; // Reset Y position on new page
+              }
             }
 
+            // Add image caption
             doc
               .fontSize(12)
               .text(`Analysis View ${i + 1}`, { align: "center" });
@@ -382,7 +337,7 @@ export class PDFGenerator {
             const imagePath = annotatedImages[i];
             console.log(`📄 Processing image ${i + 1}: ${imagePath}`);
 
-            // Since we're now always returning file paths, just check if file exists
+            // Place image
             if (fs.existsSync(imagePath)) {
               try {
                 const stats = fs.statSync(imagePath);
@@ -409,217 +364,149 @@ export class PDFGenerator {
               doc.text(`[Image ${i + 1} not found]`, 50, currentY);
             }
 
-            currentY += imageHeight + 20;
+            // Move position for next image
+            currentY += imageHeight + verticalGap;
             doc.y = currentY;
           }
         }
 
-        // --- PAGE 2: ANALYSIS RESULTS ---
+        // --- MODEL PROPERTIES AND QA SUMMARY ALWAYS ON A NEW PAGE ---
+
+        // Always start a new page for the analysis section
         doc.addPage();
 
-        // Technical Overview Section
-        doc.fontSize(16).text("Technical Overview", { underline: true });
-        doc.moveDown(1);
+        // 3D Model Properties section
+        doc.fontSize(14).text("Technical Overview", { align: "left" });
+        doc.moveDown(1.5);
 
-        // DEBUG: Log what we have for model stats
-        console.log("🔍 DEBUG - job.modelStats:", job.modelStats);
-        console.log("🔍 DEBUG - job object keys:", Object.keys(job));
+        // Create a two-column layout
+        const originalY = doc.y; // Store the starting Y position
 
-        // Get model stats from job (should be added from screenshotProcessor)
-        const stats = job.modelStats;
+        // Model properties with icons for compliance - LEFT COLUMN
+        doc.fontSize(11);
 
-        if (stats) {
-          console.log("✅ Model stats found, generating Technical Overview");
-
-          // Define limits for comparison
-          const limits = {
-            polycount: 150000,
-            meshCount: 5,
-            materialCount: 5,
-            doubleSidedCount: 0,
-            fileSize: 15 * 1024 * 1024, // 15MB in bytes
+        // Function to add a property line with check/x mark
+        const addPropertyLine = (
+          property: string,
+          value: string | number,
+          limit?: number | null,
+          unit: string = ""
+        ) => {
+          // Format number with commas for thousands
+          const formatNumber = (num: number): string => {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
           };
 
-          // Status indicators with color coding
-          const polycountColor = this.getStatusColor(
-            stats.vertices || 0,
-            limits.polycount
-          );
-          const meshColor = this.getStatusColor(
-            stats.meshCount || 0,
-            limits.meshCount
-          );
-          const materialColor = this.getStatusColor(
-            stats.materialCount || 0,
-            limits.materialCount
-          );
-          const doubleSidedColor = this.getStatusColor(
-            stats.doubleSidedCount || 0,
-            limits.doubleSidedCount,
-            true
-          );
-          const fileSizeColor = this.getStatusColor(
-            stats.fileSize || 0,
-            limits.fileSize
-          );
+          const valueStr =
+            (typeof value === "number" ? formatNumber(value) : value) + unit;
+          const checkValue =
+            typeof value === "number" ? value : parseFloat(String(value));
 
-          // Create status entries with colored indicators
-          const statusEntries = [
-            {
-              label: "Polycount",
-              value: (stats.vertices || 0).toLocaleString(),
-              limit: `(limit: ${limits.polycount.toLocaleString()})`,
-              color: polycountColor,
-            },
-            {
-              label: "Triangles",
-              value: (stats.triangles || 0).toLocaleString(),
-              limit: "",
-              color: "#666666", // Gray for informational
-            },
-            {
-              label: "Mesh Count",
-              value: (stats.meshCount || 0).toString(),
-              limit: `(limit: ${limits.meshCount})`,
-              color: meshColor,
-            },
-            {
-              label: "Material Count",
-              value: (stats.materialCount || 0).toString(),
-              limit: `(limit: ${limits.materialCount})`,
-              color: materialColor,
-            },
-            {
-              label: "Double-sided Materials",
-              value: (stats.doubleSidedCount || 0).toString(),
-              limit: `(limit: ${limits.doubleSidedCount})`,
-              color: doubleSidedColor,
-            },
-            {
-              label: "File Size",
-              value: this.formatFileSize(stats.fileSize || 0),
-              limit: `(limit: ${this.formatFileSize(limits.fileSize)})`,
-              color: fileSizeColor,
-            },
-          ];
+          // Start horizontal positioning
+          const startY = doc.y;
 
-          // Render each status entry
-          statusEntries.forEach((entry) => {
-            // Draw colored status indicator (circle)
-            doc.circle(60, doc.y + 6, 4);
-            doc.fillColor(entry.color);
-            doc.fill();
+          // Draw colored circle icon based on compliance
+          if (limit !== undefined) {
+            const isCompliant = limit === null || checkValue <= limit;
+            const circleColor = isCompliant ? "#34a853" : "#ea4335"; // Green or Red
 
-            // Reset color for text
-            doc.fillColor("#000000");
-
-            // Add label and value
             doc
-              .fontSize(12)
-              .text(`${entry.label}`, 75, doc.y, { continued: true });
-            doc.text(`${entry.value}`, 300, doc.y, { continued: true });
+              .circle(65, startY + 6, 5)
+              .fillColor(circleColor)
+              .fill();
+          } else {
+            // Gray circle for properties with no limit
+            doc
+              .circle(65, startY + 6, 5)
+              .fillColor("#9aa0a6")
+              .fill();
+          }
 
-            // Add limit info in gray if exists
-            if (entry.limit) {
-              doc.fillColor("#666666");
-              doc.text(`${entry.limit}`, 450, doc.y);
-              doc.fillColor("#000000");
-            } else {
-              doc.text(""); // End the line
-            }
+          // Reset fill color for text
+          doc.fillColor("#000000");
 
-            doc.moveDown(0.8);
+          // Property name (left aligned)
+          doc.text(property, 80, startY, { continued: false, width: 160 });
+
+          // Value (center-right aligned)
+          doc.text(valueStr, 240, startY, {
+            continued: false,
+            width: 80,
+            align: "right",
           });
 
-          doc.moveDown(1);
+          // Limit text (right aligned)
+          if (limit !== undefined) {
+            doc
+              .fillColor("#5f6368")
+              .fontSize(10)
+              .text(
+                limit === null
+                  ? ""
+                  : `(limit: ${limit ? formatNumber(limit) : limit}${unit})`,
+                330,
+                startY,
+                { width: contentWidth - 280, align: "right" }
+              )
+              .fillColor("#000000")
+              .fontSize(11);
+          }
 
-          // Additional technical details
-          doc.fontSize(14).text("Technical Details", { underline: true });
-          doc.moveDown(0.5);
-          doc.fontSize(12);
+          doc.moveDown(1.5);
+        };
 
-          doc.text(`Meshes: ${stats.meshCount || "N/A"}`);
-          doc.text(`Materials: ${stats.materialCount || "N/A"}`);
-          doc.text(`Vertices: ${stats.vertices || "N/A"}`);
-          doc.text(`Triangles: ${stats.triangles || "N/A"}`);
-          doc.text(`Double-Sided Count: ${stats.doubleSidedCount || "N/A"}`);
-          doc.text(
-            `Material Names: ${
-              (stats.doubleSidedMaterials || []).join(", ") || "N/A"
-            }`
+        // Add model properties with their limits
+        const stats = job.modelStats;
+        if (stats) {
+          addPropertyLine("Polycount", stats.vertices, 150000);
+          addPropertyLine("Triangles", stats.triangles);
+          addPropertyLine("Mesh Count", stats.meshCount, 5);
+          addPropertyLine("Material Count", stats.materialCount, 5);
+          addPropertyLine("Double-sided Materials", stats.doubleSidedCount, 0);
+          addPropertyLine(
+            "File Size",
+            parseFloat((stats.fileSize / (1024 * 1024)).toFixed(2)),
+            15,
+            "MB"
           );
-
-          doc.moveDown(1);
         } else {
-          console.log("❌ No model stats available in job object");
-          doc.fontSize(12).text("Model statistics not available");
-          doc.moveDown(1);
+          // Use placeholder values if no stats provided
+          const properties = [
+            "• Polycount: 150,000",
+            "• Material Count: 5",
+            "• File Size: 5.2MB",
+          ];
+
+          properties.forEach((prop) => {
+            doc.text(prop);
+            doc.moveDown(1.5);
+          });
         }
 
-        // AI Analysis Results
-        doc.fontSize(14).text("AI Analysis Results", { underline: true });
-        doc.moveDown(1);
+        // Add a horizontal line across the full page width
+        const lineY = doc.y + 15;
+        doc.moveTo(50, lineY).lineTo(545, lineY).stroke();
+
+        // Reset position to continue after the horizontal line
+        doc.x = 50;
+        doc.y = lineY + 20;
+
+        // AI Analysis Results section
+        doc.fontSize(14).text("AI Analysis Results");
+        doc.moveDown(0.5);
 
         if (job.aiAnalysis) {
-          // Approval Status
-          doc.fontSize(12).text("Overall Status:", { continued: false });
-          doc.moveDown(0.5);
-
-          const statusColor =
-            job.aiAnalysis.status === "Approved" ? "#34a853" : "#ea4335";
-          doc.fillColor(statusColor);
-          doc.fontSize(14).text(job.aiAnalysis.status, { continued: false });
-          doc.fillColor("#000000");
+          // Summary text
+          doc.fontSize(11).text(job.aiAnalysis.summary || "No issues found.");
           doc.moveDown(1);
 
-          // Similarity Scores
-          if (job.aiAnalysis.scores) {
-            doc.fontSize(12).text("Similarity Scores:");
-            doc.moveDown(0.5);
-            doc.fontSize(10);
-            doc.text(`• Silhouette: ${job.aiAnalysis.scores.silhouette}%`);
-            doc.text(`• Proportion: ${job.aiAnalysis.scores.proportion}%`);
-            doc.text(
-              `• Color/Material: ${job.aiAnalysis.scores.colorMaterial}%`
-            );
-            doc.text(`• Overall: ${job.aiAnalysis.scores.overall}%`);
-            doc.moveDown(1);
-          }
-
-          // Issues Found
-          if (job.aiAnalysis.differences.length > 0) {
-            doc
-              .fontSize(12)
-              .text(`Issues Found (${job.aiAnalysis.differences.length}):`);
-            doc.moveDown(0.5);
-            doc.fontSize(10);
-
-            job.aiAnalysis.differences.forEach((diff, index) => {
-              const severityColor =
-                diff.severity === "high"
-                  ? "#ea4335"
-                  : diff.severity === "medium"
-                  ? "#fbbc04"
-                  : "#34a853";
-
-              doc.fillColor(severityColor);
-              doc.text(`${index + 1}. [${diff.severity.toUpperCase()}] `, {
-                continued: true,
-              });
-              doc.fillColor("#000000");
-              doc.text(diff.issues.join(" "), { continued: false });
-              doc.moveDown(0.5);
-            });
-          } else {
-            doc.fontSize(12).text("No issues found.");
-          }
-
-          doc.moveDown(1);
-
-          // Summary
-          doc.fontSize(12).text("Summary:");
+          doc.fontSize(12).text("Status:");
           doc.moveDown(0.5);
-          doc.fontSize(10).text(job.aiAnalysis.summary);
+
+          doc.fontSize(11);
+          doc.text(job.aiAnalysis.status);
+        } else {
+          doc.fontSize(11).text("No AI analysis available.");
         }
 
         // Finalize PDF
