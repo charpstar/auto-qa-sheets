@@ -127,6 +127,16 @@ export class PDFGenerator {
         return { filename, data: base64 };
       });
 
+      console.log(
+        `📝 Prepared payload: ${
+          imagePayload.length
+        } images, diff keys: ${Object.keys(formattedDiff)}`
+      );
+      console.log(
+        "📝 Sample image filenames:",
+        imagePayload.map((img) => img.filename)
+      );
+
       console.log("📝 Sending images to annotation service...");
 
       const response = await fetch("http://45.76.82.207:8080/annotate", {
@@ -138,16 +148,31 @@ export class PDFGenerator {
         }),
       });
 
+      console.log(
+        `📝 Annotation service response: ${response.status} ${response.statusText}`
+      );
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.error("❌ Annotation service error response:", errorText);
         throw new Error(
           `Annotator server error: ${response.status} - ${errorText}`
         );
       }
 
       const result = await response.json();
+      console.log("📝 Annotation service result:", {
+        hasImages: !!result.images,
+        imageCount: Array.isArray(result.images) ? result.images.length : 0,
+        resultKeys: Object.keys(result),
+        firstImageKeys: result.images?.[0] ? Object.keys(result.images[0]) : [],
+      });
 
       if (!Array.isArray(result.images) || result.images.length === 0) {
+        console.warn(
+          "⚠️ Full annotation service response:",
+          JSON.stringify(result, null, 2)
+        );
         throw new Error("No annotated images returned from annotator.");
       }
 
