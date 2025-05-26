@@ -25,10 +25,15 @@ export class PDFGenerator {
       throw new Error("No AI analysis available for PDF generation");
     }
 
+    // Calculate the offset for reference indices
+    // Screenshots come first, then references
+    const screenshotCount = job.screenshots?.length || 0;
+
     const formattedDiff = {
       differences: job.aiAnalysis.differences.map((diff) => ({
         renderIndex: diff.renderIndex,
-        referenceIndex: diff.referenceIndex,
+        // Adjust referenceIndex to account for screenshots being first in the array
+        referenceIndex: diff.referenceIndex + screenshotCount,
         issues: diff.issues,
         bbox: diff.bbox,
         severity: diff.severity,
