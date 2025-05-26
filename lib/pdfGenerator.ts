@@ -40,6 +40,26 @@ export class PDFGenerator {
     return formattedDiff;
   }
 
+  // Helper function to get status color based on limits
+  private getStatusColor(
+    value: number,
+    limit: number,
+    isInverse: boolean = false
+  ): string {
+    if (isInverse) {
+      // For double-sided materials, red if above limit, green if at or below
+      return value > limit ? "#ea4335" : "#34a853";
+    }
+    // For normal metrics, green if below limit, red if at or above
+    return value <= limit ? "#34a853" : "#ea4335";
+  }
+
+  // Helper function to format file size
+  private formatFileSize(bytes: number): string {
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(2)}MB`;
+  }
+
   // Download images from URLs to local files for processing
   private async downloadImages(urls: string[]): Promise<string[]> {
     const allPaths: string[] = [];
@@ -335,8 +355,140 @@ export class PDFGenerator {
         // --- PAGE 2: ANALYSIS RESULTS ---
         doc.addPage();
 
+        // Technical Overview Section
+        doc.fontSize(16).text("Technical Overview", { underline: true });
+        doc.moveDown(1);
+
+        // Get model stats from job (should be added from screenshotProcessor)
+        const stats = job.modelStats;
+
+        if (stats) {
+          // Define limits for comparison
+          const limits = {
+            polycount: 150000,
+            meshCount: 5,
+            materialCount: 5,
+            doubleSidedCount: 0,
+            fileSize: 15 * 1024 * 1024, // 15MB in bytes
+          };
+
+          // Status indicators with color coding
+          const polycountColor = this.getStatusColor(
+            stats.vertices || 0,
+            limits.polycount
+          );
+          const meshColor = this.getStatusColor(
+            stats.meshCount || 0,
+            limits.meshCount
+          );
+          const materialColor = this.getStatusColor(
+            stats.materialCount || 0,
+            limits.materialCount
+          );
+          const doubleSidedColor = this.getStatusColor(
+            stats.doubleSidedCount || 0,
+            limits.doubleSidedCount,
+            true
+          );
+          const fileSizeColor = this.getStatusColor(
+            stats.fileSize || 0,
+            limits.fileSize
+          );
+
+          // Create status entries with colored indicators
+          const statusEntries = [
+            {
+              label: "Polycount",
+              value: (stats.vertices || 0).toLocaleString(),
+              limit: `(limit: ${limits.polycount.toLocaleString()})`,
+              color: polycountColor,
+            },
+            {
+              label: "Triangles",
+              value: (stats.triangles || 0).toLocaleString(),
+              limit: "",
+              color: "#666666", // Gray for informational
+            },
+            {
+              label: "Mesh Count",
+              value: (stats.meshCount || 0).toString(),
+              limit: `(limit: ${limits.meshCount})`,
+              color: meshColor,
+            },
+            {
+              label: "Material Count",
+              value: (stats.materialCount || 0).toString(),
+              limit: `(limit: ${limits.materialCount})`,
+              color: materialColor,
+            },
+            {
+              label: "Double-sided Materials",
+              value: (stats.doubleSidedCount || 0).toString(),
+              limit: `(limit: ${limits.doubleSidedCount})`,
+              color: doubleSidedColor,
+            },
+            {
+              label: "File Size",
+              value: this.formatFileSize(stats.fileSize || 0),
+              limit: `(limit: ${this.formatFileSize(limits.fileSize)})`,
+              color: fileSizeColor,
+            },
+          ];
+
+          // Render each status entry
+          statusEntries.forEach((entry) => {
+            // Draw colored status indicator (circle)
+            doc.circle(60, doc.y + 6, 4);
+            doc.fillColor(entry.color);
+            doc.fill();
+
+            // Reset color for text
+            doc.fillColor("#000000");
+
+            // Add label and value
+            doc
+              .fontSize(12)
+              .text(`${entry.label}`, 75, doc.y, { continued: true });
+            doc.text(`${entry.value}`, 300, doc.y, { continued: true });
+
+            // Add limit info in gray if exists
+            if (entry.limit) {
+              doc.fillColor("#666666");
+              doc.text(`${entry.limit}`, 450, doc.y);
+              doc.fillColor("#000000");
+            } else {
+              doc.text(""); // End the line
+            }
+
+            doc.moveDown(0.8);
+          });
+
+          doc.moveDown(1);
+
+          // Additional technical details
+          doc.fontSize(14).text("Technical Details", { underline: true });
+          doc.moveDown(0.5);
+          doc.fontSize(12);
+
+          doc.text(`Meshes: ${stats.meshCount || "N/A"}`);
+          doc.text(`Materials: ${stats.materialCount || "N/A"}`);
+          doc.text(`Vertices: ${stats.vertices || "N/A"}`);
+          doc.text(`Triangles: ${stats.triangles || "N/A"}`);
+          doc.text(`Double-Sided Count: ${stats.doubleSidedCount || "N/A"}`);
+          doc.text(
+            `Material Names: ${
+              (stats.doubleSidedMaterials || []).join(", ") || "N/A"
+            }`
+          );
+
+          doc.moveDown(1);
+        } else {
+          doc.fontSize(12).text("Model statistics not available");
+          doc.moveDown(1);
+        }
+
         // AI Analysis Results
-        doc.fontSize(14).text("AI Analysis Results", { align: "left" });
+        doc.fontSize(14).text("AI Analysis Results", { underline: true });
         doc.moveDown(1);
 
         if (job.aiAnalysis) {
