@@ -136,8 +136,6 @@ export class PDFGenerator {
           images: imagePayload,
           diff_json: fs.readFileSync(diffPath, "utf-8"),
         }),
-        // Add timeout to prevent hanging
-        signal: AbortSignal.timeout(30000), // 30 second timeout
       });
 
       if (!response.ok) {
@@ -150,7 +148,7 @@ export class PDFGenerator {
       const result = await response.json();
 
       if (!Array.isArray(result.images) || result.images.length === 0) {
-        throw new Error("No annotated images returned from annotator");
+        throw new Error("No annotated images returned from annotator.");
       }
 
       // Save annotated images locally
@@ -167,8 +165,16 @@ export class PDFGenerator {
 
         const buffer = Buffer.from(img.data, "base64");
         const savePath = path.join(outDir, img.filename);
-        fs.writeFileSync(savePath, buffer);
-        annotatedPaths.push(savePath);
+        if (fs.existsSync(savePath)) {
+          console.warn(`Overwriting existing image: ${img.filename}`);
+        }
+
+        try {
+          fs.writeFileSync(savePath, buffer);
+          annotatedPaths.push(savePath);
+        } catch (err) {
+          console.error(`Failed to save image ${img.filename}`, err);
+        }
       }
 
       console.log(`✅ Generated ${annotatedPaths.length} annotated images`);
