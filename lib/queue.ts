@@ -21,6 +21,15 @@ export interface QAJob {
   maxRetries: number;
   error?: string;
   screenshots?: string[];
+  modelStats?: {
+    meshCount: number;
+    materialCount: number;
+    vertices: number;
+    triangles: number;
+    doubleSidedCount: number;
+    doubleSidedMaterials: string[];
+    fileSize: number;
+  };
   aiAnalysis?: {
     differences: Array<{
       renderIndex: number;
@@ -190,11 +199,17 @@ class JobQueue {
 
     try {
       // Call the actual processing function
-      const result = await this.executeQAProcessing(job);
+      const result: {
+        screenshots: string[];
+        modelStats?: any;
+        aiAnalysis?: any;
+        pdfUrl?: string;
+      } = await this.executeQAProcessing(job);
 
       job.status = "completed";
       job.completedAt = new Date().toISOString();
       job.screenshots = result.screenshots;
+      job.modelStats = result.modelStats;
       job.aiAnalysis = result.aiAnalysis;
       job.pdfUrl = result.pdfUrl;
       job.processingLogs.push(`Completed successfully at ${job.completedAt}`);
@@ -208,6 +223,12 @@ class JobQueue {
 
       if (result.pdfUrl) {
         job.processingLogs.push(`PDF Report: ${result.pdfUrl}`);
+      }
+
+      if (result.modelStats) {
+        job.processingLogs.push(
+          `Model Stats: ${result.modelStats.vertices} vertices, ${result.modelStats.triangles} triangles`
+        );
       }
 
       // Update Google Sheet with results

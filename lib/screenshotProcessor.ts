@@ -9,6 +9,15 @@ const generateId = () =>
 
 export interface ScreenshotResult {
   screenshots: string[];
+  modelStats?: {
+    meshCount: number;
+    materialCount: number;
+    vertices: number;
+    triangles: number;
+    doubleSidedCount: number;
+    doubleSidedMaterials: string[];
+    fileSize: number;
+  };
   processingLogs: string[];
 }
 
@@ -68,7 +77,7 @@ export class ScreenshotProcessor {
     return `
       <html>
         <head>
-          <script type="module" src="https://cdn2.charpstar.net/AR/Synsam/model-viewer.js"></script>
+          <script type="module" src="https://cdn2.charpstar.net/QATool/model-viewer-qa-sheets.js"></script>
           <style>
             body { 
               margin: 0; 
@@ -107,7 +116,68 @@ export class ScreenshotProcessor {
     `;
   }
 
-  // Take a single screenshot from a specific angle
+  // Extract model statistics from the loaded model
+  private async extractModelStats(page: any, glbBuffer: Buffer): Promise<any> {
+    try {
+      // Wait for model to be fully loaded
+      await page.waitForSelector("model-viewer", { timeout: 60000 });
+
+      // Wait for model to load
+      await page.evaluate(() => {
+        return new Promise((resolve) => {
+          const modelViewer = document.querySelector("model-viewer") as any;
+          if (modelViewer) {
+            if (modelViewer.modelIsVisible) {
+              resolve(true);
+            } else {
+              modelViewer.addEventListener("load", () => resolve(true));
+              setTimeout(() => resolve(true), 10000);
+            }
+          } else {
+            setTimeout(() => resolve(true), 3000);
+          }
+        });
+      });
+
+      // Extract model statistics using the same method as your client-side code
+      const stats = await page.evaluate(() => {
+        const modelViewer = document.querySelector("model-viewer") as any;
+        if (modelViewer && typeof modelViewer.getModelStats === "function") {
+          return modelViewer.getModelStats();
+        }
+        return null;
+      });
+
+      if (stats) {
+        // Add file size to stats
+        stats.fileSize = glbBuffer.length;
+        console.log("✅ Model stats extracted:", stats);
+        return stats;
+      } else {
+        console.log("⚠️ getModelStats function not available");
+        return {
+          meshCount: 0,
+          materialCount: 0,
+          vertices: 0,
+          triangles: 0,
+          doubleSidedCount: 0,
+          doubleSidedMaterials: [],
+          fileSize: glbBuffer.length,
+        };
+      }
+    } catch (error) {
+      console.error("❌ Error extracting model stats:", error);
+      return {
+        meshCount: 0,
+        materialCount: 0,
+        vertices: 0,
+        triangles: 0,
+        doubleSidedCount: 0,
+        doubleSidedMaterials: [],
+        fileSize: glbBuffer.length,
+      };
+    }
+  }
   private async takeScreenshot(
     browser: any,
     glbDataURL: string,
