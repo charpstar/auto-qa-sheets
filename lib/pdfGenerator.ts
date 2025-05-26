@@ -4,7 +4,7 @@ import PDFDocument from "pdfkit";
 import { put } from "@vercel/blob";
 import fs from "fs";
 import path from "path";
-import { QAJob } from "./lib/queue";
+import { QAJob } from "./queue";
 
 export interface PDFGenerationResult {
   pdfUrl: string;
