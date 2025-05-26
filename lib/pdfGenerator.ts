@@ -208,6 +208,10 @@ export class PDFGenerator {
           console.error("Failed to download logo:", logoErr);
         }
 
+        // Register custom font if available
+        const ttf = path.join(process.cwd(), "fonts", "Roboto-Regular.ttf");
+        const hasFont = fs.existsSync(ttf);
+
         if (hasFont) {
           doc.registerFont("MainFont", ttf);
           doc.font("MainFont");
