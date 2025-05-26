@@ -119,6 +119,8 @@ export class ScreenshotProcessor {
   // Extract model statistics from the loaded model
   private async extractModelStats(page: any, glbBuffer: Buffer): Promise<any> {
     try {
+      console.log("📊 Starting model stats extraction...");
+
       // Wait for model to be fully loaded
       await page.waitForSelector("model-viewer", { timeout: 60000 });
 
@@ -128,12 +130,20 @@ export class ScreenshotProcessor {
           const modelViewer = document.querySelector("model-viewer") as any;
           if (modelViewer) {
             if (modelViewer.modelIsVisible) {
+              console.log("Model is visible, extracting stats...");
               resolve(true);
             } else {
-              modelViewer.addEventListener("load", () => resolve(true));
-              setTimeout(() => resolve(true), 10000);
+              modelViewer.addEventListener("load", () => {
+                console.log("Model load event fired, extracting stats...");
+                resolve(true);
+              });
+              setTimeout(() => {
+                console.log("Model stats timeout, proceeding anyway...");
+                resolve(true);
+              }, 10000);
             }
           } else {
+            console.log("No model-viewer found for stats");
             setTimeout(() => resolve(true), 3000);
           }
         });
@@ -142,19 +152,45 @@ export class ScreenshotProcessor {
       // Extract model statistics using the same method as your client-side code
       const stats = await page.evaluate(() => {
         const modelViewer = document.querySelector("model-viewer") as any;
-        if (modelViewer && typeof modelViewer.getModelStats === "function") {
-          return modelViewer.getModelStats();
+        console.log("Checking for getModelStats function...");
+
+        if (modelViewer) {
+          console.log("Model viewer found, checking for getModelStats...");
+
+          if (typeof modelViewer.getModelStats === "function") {
+            console.log("getModelStats function found, calling it...");
+            try {
+              const stats = modelViewer.getModelStats();
+              console.log("Model stats extracted:", stats);
+              return stats;
+            } catch (error) {
+              console.error("Error calling getModelStats:", error);
+              return null;
+            }
+          } else {
+            console.log("getModelStats function not available on model viewer");
+            console.log(
+              "Available methods:",
+              Object.getOwnPropertyNames(modelViewer)
+            );
+            return null;
+          }
+        } else {
+          console.log("No model viewer found");
+          return null;
         }
-        return null;
       });
 
       if (stats) {
         // Add file size to stats
-        stats.fileSize = glbBuffer.length;
-        console.log("✅ Model stats extracted:", stats);
-        return stats;
+        const finalStats = {
+          ...stats,
+          fileSize: glbBuffer.length,
+        };
+        console.log("✅ Model stats extracted successfully:", finalStats);
+        return finalStats;
       } else {
-        console.log("⚠️ getModelStats function not available");
+        console.log("⚠️ getModelStats function not available or returned null");
         return {
           meshCount: 0,
           materialCount: 0,
