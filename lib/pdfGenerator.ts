@@ -107,26 +107,28 @@ export class PDFGenerator {
       throw new Error("Missing screenshots or AI analysis for annotation");
     }
 
-    // Combine screenshots and references for annotation
-    const allUrls = [...job.screenshots, ...job.references];
-    const allPaths = await this.downloadImages(allUrls);
-
-    // Format the diff for the annotation service
-    const formattedDiff = this.formatAnalysisForAnnotator(job);
-    const diffPath = path.join(this.tmpDir, "diff.json");
-    fs.writeFileSync(diffPath, JSON.stringify(formattedDiff, null, 2));
-
-    // Prepare payload for annotation service
-    const imagePayload = allPaths.map((p) => {
-      const buffer = fs.readFileSync(p);
-      const base64 = buffer.toString("base64");
-      const filename = path.basename(p);
-      return { filename, data: base64 };
-    });
-
-    console.log("📝 Sending images to annotation service...");
+    console.log("📝 Attempting to get annotated images...");
 
     try {
+      // Combine screenshots and references for annotation
+      const allUrls = [...job.screenshots, ...job.references];
+      const allPaths = await this.downloadImages(allUrls);
+
+      // Format the diff for the annotation service
+      const formattedDiff = this.formatAnalysisForAnnotator(job);
+      const diffPath = path.join(this.tmpDir, "diff.json");
+      fs.writeFileSync(diffPath, JSON.stringify(formattedDiff, null, 2));
+
+      // Prepare payload for annotation service
+      const imagePayload = allPaths.map((p) => {
+        const buffer = fs.readFileSync(p);
+        const base64 = buffer.toString("base64");
+        const filename = path.basename(p);
+        return { filename, data: base64 };
+      });
+
+      console.log("📝 Sending images to annotation service...");
+
       const response = await fetch("http://45.76.82.207:8080/annotate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -134,6 +136,8 @@ export class PDFGenerator {
           images: imagePayload,
           diff_json: fs.readFileSync(diffPath, "utf-8"),
         }),
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(30000), // 30 second timeout
       });
 
       if (!response.ok) {
@@ -172,8 +176,16 @@ export class PDFGenerator {
     } catch (error) {
       console.error("❌ Annotation service failed:", error);
       // Fallback: return original screenshots without annotations
-      console.log("⚠️ Using non-annotated images as fallback");
-      return job.screenshots || [];
+      console.log("⚠️ Using original screenshots as fallback");
+
+      // Return the screenshot URLs directly since annotation failed
+      if (job.screenshots && job.screenshots.length > 0) {
+        console.log(`📸 Using ${job.screenshots.length} original screenshots`);
+        return job.screenshots;
+      } else {
+        console.warn("⚠️ No screenshots available for fallback");
+        return [];
+      }
     }
   }
 
@@ -271,61 +283,43 @@ export class PDFGenerator {
 
         console.log(`📄 Adding ${annotatedImages.length} images to PDF...`);
 
-        for (let i = 0; i < annotatedImages.length; i++) {
-          if (i > 0 && currentY + imageHeight + 40 > 750) {
-            doc.addPage();
-            currentY = 70;
-          }
-
-          doc.fontSize(12).text(`Analysis View ${i + 1}`, { align: "center" });
-          doc.moveDown(0.3);
-          currentY = doc.y;
-
-          const imagePath = annotatedImages[i];
-          console.log(`📄 Processing image ${i + 1}: ${imagePath}`);
-
-          // Check if this is a URL or file path
-          if (imagePath.startsWith("http")) {
-            // It's a URL, need to download it first
-            try {
-              console.log(`📥 Downloading image from URL: ${imagePath}`);
-              const response = await fetch(imagePath);
-              if (response.ok) {
-                const imageBuffer = Buffer.from(await response.arrayBuffer());
-                const tempImagePath = path.join(
-                  this.tmpDir,
-                  `temp_img_${i}.png`
-                );
-                fs.writeFileSync(tempImagePath, imageBuffer);
-
-                doc.image(tempImagePath, 50, currentY, {
-                  width: imageWidth,
-                  height: imageHeight,
-                  fit: [imageWidth, imageHeight],
-                  align: "center",
-                });
-                console.log(`✅ Successfully added image ${i + 1} to PDF`);
-              } else {
-                throw new Error(`Failed to download image: ${response.status}`);
-              }
-            } catch (urlError) {
-              console.error(
-                `❌ Failed to download and add image ${i + 1}:`,
-                urlError
-              );
-              doc.text(
-                `[Image ${i + 1} could not be loaded from URL]`,
-                50,
-                currentY
-              );
+        if (annotatedImages.length === 0) {
+          // No images available, show a message
+          doc
+            .fontSize(12)
+            .text("No analysis images available", { align: "center" });
+          doc.moveDown(2);
+        } else {
+          for (let i = 0; i < annotatedImages.length; i++) {
+            if (i > 0 && currentY + imageHeight + 40 > 750) {
+              doc.addPage();
+              currentY = 70;
             }
-          } else {
-            // It's a file path
-            if (fs.existsSync(imagePath)) {
+
+            doc
+              .fontSize(12)
+              .text(`Analysis View ${i + 1}`, { align: "center" });
+            doc.moveDown(0.3);
+            currentY = doc.y;
+
+            const imagePath = annotatedImages[i];
+            console.log(`📄 Processing image ${i + 1}: ${imagePath}`);
+
+            // Check if this is a URL or file path
+            if (imagePath.startsWith("http")) {
+              // It's a URL, need to download it first
               try {
-                const stats = fs.statSync(imagePath);
-                if (stats.size > 0) {
-                  doc.image(imagePath, 50, currentY, {
+                console.log(`📥 Downloading image from URL: ${imagePath}`);
+                const response = await fetch(imagePath);
+                if (response.ok) {
+                  const imageBuffer = Buffer.from(await response.arrayBuffer());
+                  const tempImagePath = path.join(
+                    this.tmpDir,
+                    `temp_img_${i}.png`
+                  );
+                  fs.writeFileSync(tempImagePath, imageBuffer);
+
+                  doc.image(tempImagePath, 50, currentY, {
                     width: imageWidth,
                     height: imageHeight,
                     fit: [imageWidth, imageHeight],
@@ -333,23 +327,57 @@ export class PDFGenerator {
                   });
                   console.log(`✅ Successfully added image ${i + 1} to PDF`);
                 } else {
-                  throw new Error("Image file is empty");
+                  throw new Error(
+                    `Failed to download image: ${response.status}`
+                  );
                 }
-              } catch (imgError) {
+              } catch (urlError) {
                 console.error(
-                  `❌ Failed to add image ${i + 1} to PDF:`,
-                  imgError
+                  `❌ Failed to download and add image ${i + 1}:`,
+                  urlError
                 );
-                doc.text(`[Image ${i + 1} could not be loaded]`, 50, currentY);
+                doc.text(
+                  `[Image ${i + 1} could not be loaded from URL]`,
+                  50,
+                  currentY
+                );
               }
             } else {
-              console.error(`❌ Image file not found: ${imagePath}`);
-              doc.text(`[Image ${i + 1} not found]`, 50, currentY);
+              // It's a file path
+              if (fs.existsSync(imagePath)) {
+                try {
+                  const stats = fs.statSync(imagePath);
+                  if (stats.size > 0) {
+                    doc.image(imagePath, 50, currentY, {
+                      width: imageWidth,
+                      height: imageHeight,
+                      fit: [imageWidth, imageHeight],
+                      align: "center",
+                    });
+                    console.log(`✅ Successfully added image ${i + 1} to PDF`);
+                  } else {
+                    throw new Error("Image file is empty");
+                  }
+                } catch (imgError) {
+                  console.error(
+                    `❌ Failed to add image ${i + 1} to PDF:`,
+                    imgError
+                  );
+                  doc.text(
+                    `[Image ${i + 1} could not be loaded]`,
+                    50,
+                    currentY
+                  );
+                }
+              } else {
+                console.error(`❌ Image file not found: ${imagePath}`);
+                doc.text(`[Image ${i + 1} not found]`, 50, currentY);
+              }
             }
-          }
 
-          currentY += imageHeight + 20;
-          doc.y = currentY;
+            currentY += imageHeight + 20;
+            doc.y = currentY;
+          }
         }
 
         // --- PAGE 2: ANALYSIS RESULTS ---
@@ -577,7 +605,12 @@ export class PDFGenerator {
       // Step 1: Get annotated images
       logs.push("Getting annotated images from annotation service...");
       const annotatedImages = await this.getAnnotatedImages(job);
-      logs.push(`Generated ${annotatedImages.length} annotated images`);
+
+      if (annotatedImages.length === 0) {
+        logs.push("⚠️ No images available, but continuing with PDF generation");
+      } else {
+        logs.push(`Generated ${annotatedImages.length} annotated images`);
+      }
 
       // Step 2: Generate PDF
       logs.push("Generating PDF document...");

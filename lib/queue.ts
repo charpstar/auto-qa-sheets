@@ -376,7 +376,7 @@ class JobQueue {
           // Temporarily store AI analysis in job for PDF generation
           job.aiAnalysis = aiAnalysisResult;
           job.screenshots = screenshotResult.screenshots;
-
+          job.modelStats = screenshotResult.modelStats;
           const pdfResult = await generateQAReport(job);
           pdfUrl = pdfResult.pdfUrl;
 
