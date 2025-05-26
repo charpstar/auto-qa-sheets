@@ -4,7 +4,7 @@ import PDFDocument from "pdfkit";
 import { put } from "@vercel/blob";
 import fs from "fs";
 import path from "path";
-import { QAJob } from "./queue";
+import { QAJob } from "./lib/queue";
 
 export interface PDFGenerationResult {
   pdfUrl: string;
@@ -335,37 +335,6 @@ export class PDFGenerator {
         // --- PAGE 2: ANALYSIS RESULTS ---
         doc.addPage();
 
-        // Add technical details first
-        doc.fontSize(16).text("Technical Details", { underline: true });
-        doc.moveDown();
-        doc.fontSize(12);
-
-        if (job.modelStats) {
-          doc.text(`Meshes: ${job.modelStats.meshCount || "N/A"}`);
-          doc.text(`Materials: ${job.modelStats.materialCount || "N/A"}`);
-          doc.text(`Vertices: ${job.modelStats.vertices || "N/A"}`);
-          doc.text(`Triangles: ${job.modelStats.triangles || "N/A"}`);
-          doc.text(
-            `Double-Sided Count: ${job.modelStats.doubleSidedCount || "N/A"}`
-          );
-          doc.text(
-            `File Size: ${
-              job.modelStats.fileSize
-                ? (job.modelStats.fileSize / (1024 * 1024)).toFixed(2) + "MB"
-                : "N/A"
-            }`
-          );
-          doc.text(
-            `Material Names: ${
-              (job.modelStats.doubleSidedMaterials || []).join(", ") || "N/A"
-            }`
-          );
-        } else {
-          doc.text("Model statistics not available");
-        }
-
-        doc.moveDown();
-
         // AI Analysis Results
         doc.fontSize(14).text("AI Analysis Results", { align: "left" });
         doc.moveDown(1);
@@ -404,7 +373,7 @@ export class PDFGenerator {
             doc.moveDown(0.5);
             doc.fontSize(10);
 
-            job.aiAnalysis.differences.forEach((diff: any, index: number) => {
+            job.aiAnalysis.differences.forEach((diff, index) => {
               const severityColor =
                 diff.severity === "high"
                   ? "#ea4335"
