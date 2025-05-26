@@ -109,6 +109,22 @@ export class PDFGenerator {
 
     console.log("📝 Attempting to get annotated images...");
 
+    // TEMPORARY: Force skip annotation for debugging
+    const FORCE_SKIP = true; // Set to false when you want to test annotation service
+
+    if (FORCE_SKIP) {
+      console.log("🚫 FORCING SKIP OF ANNOTATION SERVICE FOR DEBUGGING");
+      if (job.screenshots && job.screenshots.length > 0) {
+        console.log(
+          `📸 Downloading ${job.screenshots.length} original screenshots as fallback`
+        );
+        const fallbackPaths = await this.downloadImages(job.screenshots);
+        console.log(`✅ Downloaded ${fallbackPaths.length} fallback images`);
+        return fallbackPaths;
+      }
+      return [];
+    }
+
     try {
       // Combine screenshots and references for annotation
       const allUrls = [...job.screenshots, ...job.references];
@@ -161,18 +177,34 @@ export class PDFGenerator {
       }
 
       const result = await response.json();
+
+      // DETAILED DEBUGGING - Log the exact response
+      console.log("🔍 FULL ANNOTATION SERVICE RESPONSE:");
+      console.log(JSON.stringify(result, null, 2));
+
       console.log("📝 Annotation service result:", {
         hasImages: !!result.images,
         imageCount: Array.isArray(result.images) ? result.images.length : 0,
         resultKeys: Object.keys(result),
         firstImageKeys: result.images?.[0] ? Object.keys(result.images[0]) : [],
+        resultType: typeof result,
+        isArray: Array.isArray(result),
       });
 
+      // Check if the response structure is different
+      if (result.images === undefined) {
+        console.log("⚠️ No 'images' property in response");
+        console.log("Available properties:", Object.keys(result));
+      }
+
       if (!Array.isArray(result.images) || result.images.length === 0) {
+        console.warn("⚠️ No images array or empty array in response");
+        console.warn("⚠️ Result.images:", result.images);
         console.warn(
-          "⚠️ Full annotation service response:",
-          JSON.stringify(result, null, 2)
+          "⚠️ Is result.images an array?",
+          Array.isArray(result.images)
         );
+        console.warn("⚠️ Length:", result.images?.length);
         throw new Error("No annotated images returned from annotator.");
       }
 
@@ -206,13 +238,27 @@ export class PDFGenerator {
       return annotatedPaths;
     } catch (error) {
       console.error("❌ Annotation service failed:", error);
-      // Fallback: return original screenshots without annotations
+      // Fallback: download original screenshots to local files
       console.log("⚠️ Using original screenshots as fallback");
 
-      // Return the screenshot URLs directly since annotation failed
       if (job.screenshots && job.screenshots.length > 0) {
-        console.log(`📸 Using ${job.screenshots.length} original screenshots`);
-        return job.screenshots;
+        console.log(
+          `📸 Downloading ${job.screenshots.length} original screenshots as fallback`
+        );
+
+        try {
+          // Download the original screenshots to local files
+          const fallbackPaths = await this.downloadImages(job.screenshots);
+          console.log(`✅ Downloaded ${fallbackPaths.length} fallback images`);
+          return fallbackPaths;
+        } catch (downloadError) {
+          console.error(
+            "❌ Failed to download fallback images:",
+            downloadError
+          );
+          console.warn("⚠️ No images available for PDF");
+          return [];
+        }
       } else {
         console.warn("⚠️ No screenshots available for fallback");
         return [];
@@ -336,21 +382,12 @@ export class PDFGenerator {
             const imagePath = annotatedImages[i];
             console.log(`📄 Processing image ${i + 1}: ${imagePath}`);
 
-            // Check if this is a URL or file path
-            if (imagePath.startsWith("http")) {
-              // It's a URL, need to download it first
+            // Since we're now always returning file paths, just check if file exists
+            if (fs.existsSync(imagePath)) {
               try {
-                console.log(`📥 Downloading image from URL: ${imagePath}`);
-                const response = await fetch(imagePath);
-                if (response.ok) {
-                  const imageBuffer = Buffer.from(await response.arrayBuffer());
-                  const tempImagePath = path.join(
-                    this.tmpDir,
-                    `temp_img_${i}.png`
-                  );
-                  fs.writeFileSync(tempImagePath, imageBuffer);
-
-                  doc.image(tempImagePath, 50, currentY, {
+                const stats = fs.statSync(imagePath);
+                if (stats.size > 0) {
+                  doc.image(imagePath, 50, currentY, {
                     width: imageWidth,
                     height: imageHeight,
                     fit: [imageWidth, imageHeight],
@@ -358,52 +395,18 @@ export class PDFGenerator {
                   });
                   console.log(`✅ Successfully added image ${i + 1} to PDF`);
                 } else {
-                  throw new Error(
-                    `Failed to download image: ${response.status}`
-                  );
+                  throw new Error("Image file is empty");
                 }
-              } catch (urlError) {
+              } catch (imgError) {
                 console.error(
-                  `❌ Failed to download and add image ${i + 1}:`,
-                  urlError
+                  `❌ Failed to add image ${i + 1} to PDF:`,
+                  imgError
                 );
-                doc.text(
-                  `[Image ${i + 1} could not be loaded from URL]`,
-                  50,
-                  currentY
-                );
+                doc.text(`[Image ${i + 1} could not be loaded]`, 50, currentY);
               }
             } else {
-              // It's a file path
-              if (fs.existsSync(imagePath)) {
-                try {
-                  const stats = fs.statSync(imagePath);
-                  if (stats.size > 0) {
-                    doc.image(imagePath, 50, currentY, {
-                      width: imageWidth,
-                      height: imageHeight,
-                      fit: [imageWidth, imageHeight],
-                      align: "center",
-                    });
-                    console.log(`✅ Successfully added image ${i + 1} to PDF`);
-                  } else {
-                    throw new Error("Image file is empty");
-                  }
-                } catch (imgError) {
-                  console.error(
-                    `❌ Failed to add image ${i + 1} to PDF:`,
-                    imgError
-                  );
-                  doc.text(
-                    `[Image ${i + 1} could not be loaded]`,
-                    50,
-                    currentY
-                  );
-                }
-              } else {
-                console.error(`❌ Image file not found: ${imagePath}`);
-                doc.text(`[Image ${i + 1} not found]`, 50, currentY);
-              }
+              console.error(`❌ Image file not found: ${imagePath}`);
+              doc.text(`[Image ${i + 1} not found]`, 50, currentY);
             }
 
             currentY += imageHeight + 20;
@@ -418,10 +421,16 @@ export class PDFGenerator {
         doc.fontSize(16).text("Technical Overview", { underline: true });
         doc.moveDown(1);
 
+        // DEBUG: Log what we have for model stats
+        console.log("🔍 DEBUG - job.modelStats:", job.modelStats);
+        console.log("🔍 DEBUG - job object keys:", Object.keys(job));
+
         // Get model stats from job (should be added from screenshotProcessor)
         const stats = job.modelStats;
 
         if (stats) {
+          console.log("✅ Model stats found, generating Technical Overview");
+
           // Define limits for comparison
           const limits = {
             polycount: 150000,
@@ -542,6 +551,7 @@ export class PDFGenerator {
 
           doc.moveDown(1);
         } else {
+          console.log("❌ No model stats available in job object");
           doc.fontSize(12).text("Model statistics not available");
           doc.moveDown(1);
         }
