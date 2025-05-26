@@ -16,15 +16,12 @@ export class PDFGenerator {
   private tmpDir: string;
 
   constructor(jobId: string) {
-    // Use the SAME directory structure as qa-jobs/route.ts
     this.tmpDir = path.join("/tmp", jobId);
   }
 
-  // Download images from URLs to local files for processing
   private async downloadImages(urls: string[]): Promise<string[]> {
     const allPaths: string[] = [];
 
-    // Ensure temp directory exists
     if (fs.existsSync(this.tmpDir)) {
       fs.rmSync(this.tmpDir, { recursive: true, force: true });
     }
@@ -61,22 +58,30 @@ export class PDFGenerator {
     return allPaths;
   }
 
-  // Get annotated images - EXACTLY like qa-jobs/route.ts
   private async getAnnotatedImages(job: QAJob): Promise<string[]> {
     if (!job.screenshots || !job.aiAnalysis) {
       throw new Error("Missing screenshots or AI analysis for annotation");
     }
 
+    // Check if there are any differences to annotate
+    const hasDifferences =
+      job.aiAnalysis.differences && job.aiAnalysis.differences.length > 0;
+
+    if (!hasDifferences) {
+      console.log("⚠️ No differences to annotate, using original screenshots");
+      return await this.downloadImages(job.screenshots);
+    }
+
     try {
-      // Take first 4 screenshots + all references (like working code)
+      // Send only first 4 screenshots + references to match annotate.py expectations
       const renders = job.screenshots.slice(0, 4);
       const allUrls = [...renders, ...job.references];
       const allPaths = await this.downloadImages(allUrls);
 
-      // Create diff JSON exactly like working code
-      const diff = {
+      // Adjust diff indices for 4 renders max
+      const adjustedDiff = {
         differences: job.aiAnalysis.differences.map((d) => ({
-          renderIndex: Math.min(d.renderIndex, 3), // Max render index is 3
+          renderIndex: Math.min(d.renderIndex, 3),
           referenceIndex: d.referenceIndex,
           issues: d.issues,
           bbox: d.bbox,
@@ -87,12 +92,11 @@ export class PDFGenerator {
       };
 
       const diffPath = path.join(this.tmpDir, "diff.json");
-      fs.writeFileSync(diffPath, JSON.stringify(diff, null, 2));
+      fs.writeFileSync(diffPath, JSON.stringify(adjustedDiff, null, 2));
 
       const outDir = path.join(this.tmpDir, "annotations");
       fs.mkdirSync(outDir, { recursive: true });
 
-      // Call annotation service exactly like working code
       const imagePayload = allPaths.map((p) => {
         const buffer = fs.readFileSync(p);
         const base64 = buffer.toString("base64");
@@ -122,9 +126,7 @@ export class PDFGenerator {
         throw new Error("No annotated images returned from annotator.");
       }
 
-      // Save annotated images exactly like working code
-      fs.mkdirSync(outDir, { recursive: true });
-
+      // Save annotated images
       for (const img of result.images) {
         if (!img.filename || !img.data) {
           console.warn("Skipping invalid image object:", img);
@@ -144,7 +146,7 @@ export class PDFGenerator {
         }
       }
 
-      // Read from filesystem exactly like working code
+      // Return annotated image paths
       const annotated = fs
         .readdirSync(outDir)
         .filter((f) => f.endsWith(".png"))
@@ -153,16 +155,11 @@ export class PDFGenerator {
       return annotated;
     } catch (error) {
       console.error("Annotation service failed:", error);
-      // Fallback to original screenshots
-      if (job.screenshots && job.screenshots.length > 0) {
-        const fallbackPaths = await this.downloadImages(job.screenshots);
-        return fallbackPaths;
-      }
-      return [];
+      // Always fallback to original screenshots
+      return await this.downloadImages(job.screenshots);
     }
   }
 
-  // Generate PDF exactly like qa-jobs/route.ts
   private async generatePDFDocument(
     annotatedImages: string[],
     job: QAJob
@@ -170,7 +167,6 @@ export class PDFGenerator {
     return new Promise(async (resolve, reject) => {
       try {
         const ttf = path.join(process.cwd(), "fonts", "Roboto-Regular.ttf");
-
         const logoPath = path.join(this.tmpDir, "logo.png");
         let hasLogo = false;
 
@@ -190,12 +186,7 @@ export class PDFGenerator {
         const doc = new PDFDocument({
           autoFirstPage: false,
           size: [595.28, 841.89],
-          margins: {
-            top: 50,
-            bottom: 50,
-            left: 50,
-            right: 50,
-          },
+          margins: { top: 50, bottom: 50, left: 50, right: 50 },
           font: ttf,
           info: {
             Title: "3D Model QA Report",
@@ -211,7 +202,7 @@ export class PDFGenerator {
         doc.registerFont("MainFont", ttf);
         doc.addPage();
 
-        // Header
+        // Header with logo
         if (hasLogo) {
           doc.image(logoPath, 40, 40, { width: 150 });
           doc.fontSize(14).text("3D Model QA Report", 50, 85);
@@ -219,27 +210,26 @@ export class PDFGenerator {
           doc.font("MainFont").fontSize(16).text("3D Model QA Report");
         }
 
+        // Article information
         doc.fontSize(12).text(`Article ID: ${job.articleId}`, 50, 110);
         doc.text(`Product: ${job.productName}`, 50, 125);
         doc.text(`Generated: ${new Date().toLocaleString()}`, 50, 140);
 
+        // Separator line
         doc.moveDown(0.5);
         doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
         doc.moveDown(1);
 
-        // Images
+        // Add images section
         const contentWidth = 495;
         const imageWidth = contentWidth;
         const imageHeight = annotatedImages.length > 1 ? 280 : 380;
-        const verticalGap = 10;
         let currentY = doc.y;
 
         for (let i = 0; i < annotatedImages.length; i++) {
-          if (i > 0) {
-            if (currentY + imageHeight + 40 > 750) {
-              doc.addPage();
-              currentY = 70;
-            }
+          if (i > 0 && currentY + imageHeight + 40 > 750) {
+            doc.addPage();
+            currentY = 70;
           }
 
           doc.fontSize(12).text(`Analysis View ${i + 1}`, { align: "center" });
@@ -266,16 +256,16 @@ export class PDFGenerator {
             doc.text(`[Image ${i + 1} not found]`, 50, currentY);
           }
 
-          currentY += imageHeight + verticalGap;
+          currentY += imageHeight + 10;
           doc.y = currentY;
         }
 
-        // Technical Overview page
+        // Start new page for Technical Overview
         doc.addPage();
         doc.fontSize(14).text("Technical Overview", { align: "left" });
         doc.moveDown(1.5);
-        doc.fontSize(11);
 
+        // Function to add property lines with status indicators
         const addPropertyLine = (
           property: string,
           value: string | number,
@@ -290,9 +280,9 @@ export class PDFGenerator {
             (typeof value === "number" ? formatNumber(value) : value) + unit;
           const checkValue =
             typeof value === "number" ? value : parseFloat(String(value));
-
           const startY = doc.y;
 
+          // Draw status indicator circle
           if (limit !== undefined) {
             const isCompliant = limit === null || checkValue <= limit;
             const circleColor = isCompliant ? "#34a853" : "#ea4335";
@@ -307,7 +297,9 @@ export class PDFGenerator {
               .fill();
           }
 
+          // Reset color and add text
           doc.fillColor("#000000");
+          doc.fontSize(11);
           doc.text(property, 80, startY, { continued: false, width: 160 });
           doc.text(valueStr, 240, startY, {
             continued: false,
@@ -315,30 +307,26 @@ export class PDFGenerator {
             align: "right",
           });
 
+          // Add limit information
           if (limit !== undefined) {
-            doc
-              .fillColor("#5f6368")
-              .fontSize(10)
-              .text(
-                limit === null
-                  ? ""
-                  : `(limit: ${limit ? formatNumber(limit) : limit}${unit})`,
-                330,
-                startY,
-                { width: contentWidth - 280, align: "right" }
-              )
-              .fillColor("#000000")
-              .fontSize(11);
+            doc.fillColor("#5f6368").fontSize(10);
+            const limitText =
+              limit === null ? "" : `(limit: ${formatNumber(limit)}${unit})`;
+            doc.text(limitText, 330, startY, { width: 165, align: "right" });
+            doc.fillColor("#000000").fontSize(11);
           }
 
           doc.moveDown(1.5);
         };
 
+        // Add model statistics
         const stats = job.modelStats;
-        console.log("🔍 DEBUG - Model stats:", stats);
-        console.log("🔍 DEBUG - Job keys:", Object.keys(job));
 
-        if (stats) {
+        if (
+          stats &&
+          (stats.vertices > 0 || stats.meshCount > 0 || stats.materialCount > 0)
+        ) {
+          // Use actual model stats
           addPropertyLine("Polycount", stats.vertices || 0, 150000);
           addPropertyLine("Triangles", stats.triangles || 0);
           addPropertyLine("Mesh Count", stats.meshCount || 0, 5);
@@ -355,39 +343,46 @@ export class PDFGenerator {
             "MB"
           );
         } else {
-          console.log("❌ No model stats available - using placeholder values");
-          const properties = [
-            "• Polycount: N/A",
-            "• Material Count: N/A",
-            "• File Size: N/A",
-          ];
-          properties.forEach((prop) => {
-            doc.text(prop);
-            doc.moveDown(1.5);
-          });
+          // Model stats not available or all zeros
+          doc.fontSize(11);
+          doc.text("Model statistics extraction failed or not available.");
+          doc.moveDown(0.5);
+          doc.text("This may be due to:");
+          doc.text("• Model-viewer getModelStats() function not available");
+          doc.text("• GLB file format incompatibility");
+          doc.text("• Browser environment limitations");
+          if (stats?.fileSize) {
+            doc.moveDown(0.5);
+            doc.text(
+              `File Size: ${(stats.fileSize / (1024 * 1024)).toFixed(2)}MB`
+            );
+          }
         }
 
+        // Add separator line
         const lineY = doc.y + 15;
         doc.moveTo(50, lineY).lineTo(545, lineY).stroke();
         doc.x = 50;
         doc.y = lineY + 20;
 
-        // AI Analysis
+        // AI Analysis Results section
         doc.fontSize(14).text("AI Analysis Results");
         doc.moveDown(0.5);
 
         if (job.aiAnalysis) {
+          // Summary
           doc.fontSize(11).text(job.aiAnalysis.summary || "No issues found.");
           doc.moveDown(1);
+
+          // Status with color coding
           doc.fontSize(12).text("Status:");
           doc.moveDown(0.5);
 
-          // Color code the status
           const statusColor =
             job.aiAnalysis.status === "Approved" ? "#34a853" : "#ea4335";
           doc.fillColor(statusColor);
           doc.fontSize(11).text(job.aiAnalysis.status);
-          doc.fillColor("#000000"); // Reset to black
+          doc.fillColor("#000000");
         } else {
           doc.fontSize(11).text("No AI analysis available.");
         }
