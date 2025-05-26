@@ -16,7 +16,8 @@ export class PDFGenerator {
   private tmpDir: string;
 
   constructor(jobId: string) {
-    this.tmpDir = path.join("/tmp", `pdf-${jobId}`);
+    // Use the SAME directory structure as qa-jobs/route.ts
+    this.tmpDir = path.join("/tmp", jobId);
   }
 
   // Convert our AI analysis format to their annotation service format
