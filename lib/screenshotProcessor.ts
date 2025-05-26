@@ -77,7 +77,7 @@ export class ScreenshotProcessor {
     return `
       <html>
         <head>
-          <script type="module" src="https://cdn2.charpstar.net/QATool/qa-tool-viewer.js.js"></script>
+          <script type="module" src="https://demosetc.b-cdn.net/QATool/model-viewer.js"></script>
           <style>
             body { 
               margin: 0; 
