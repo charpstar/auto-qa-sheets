@@ -214,6 +214,7 @@ export class ScreenshotProcessor {
       };
     }
   }
+
   private async takeScreenshot(
     browser: any,
     glbDataURL: string,
@@ -277,6 +278,7 @@ export class ScreenshotProcessor {
   async processScreenshots(job: QAJob): Promise<ScreenshotResult> {
     const logs: string[] = [];
     const screenshots: string[] = [];
+    let modelStats: any = null;
 
     try {
       logs.push(
@@ -308,7 +310,34 @@ export class ScreenshotProcessor {
       });
 
       try {
-        // Step 4: Take screenshots from different angles
+        // Step 4: Extract model stats first (using the first page)
+        logs.push("Extracting model statistics...");
+        const statsPage = await browser.newPage();
+        try {
+          await statsPage.setViewport({ width: 800, height: 600 });
+          const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
+          await statsPage.setContent(htmlContent, {
+            waitUntil: "networkidle0",
+          });
+
+          modelStats = await this.extractModelStats(statsPage, glbBuffer);
+          logs.push("✅ Model statistics extracted successfully");
+        } catch (statsError) {
+          logs.push(`⚠️ Failed to extract model stats: ${statsError}`);
+          modelStats = {
+            meshCount: 0,
+            materialCount: 0,
+            vertices: 0,
+            triangles: 0,
+            doubleSidedCount: 0,
+            doubleSidedMaterials: [],
+            fileSize: glbBuffer.length,
+          };
+        } finally {
+          await statsPage.close();
+        }
+
+        // Step 5: Take screenshots from different angles
         const angles = ["front", "back", "left", "right", "isometric"];
 
         for (const angle of angles) {
@@ -344,7 +373,11 @@ export class ScreenshotProcessor {
         `Screenshot processing completed: ${screenshots.length} images generated`
       );
 
-      return { screenshots, processingLogs: logs };
+      return {
+        screenshots,
+        modelStats,
+        processingLogs: logs,
+      };
     } catch (error) {
       const errorMsg = `Screenshot processing failed: ${
         error instanceof Error ? error.message : "Unknown error"
