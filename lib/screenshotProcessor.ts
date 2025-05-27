@@ -118,7 +118,7 @@ export class ScreenshotProcessor {
     }
   }
 
-  // Generate HTML for model-viewer with local script
+  // Generate HTML for model-viewer with local script via API route
   private generateModelViewerHTML(glbUrl: string, cameraAngle: string): string {
     const cameraSettings = {
       front: 'camera-orbit="0deg 75deg 4m"',
@@ -129,7 +129,7 @@ export class ScreenshotProcessor {
       isometric: 'camera-orbit="45deg 55deg 4m"',
     };
 
-    // Get base URL for local script
+    // Get base URL for API route
     const baseUrl = process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL}`
       : process.env.NEXT_PUBLIC_BASE_URL
@@ -139,7 +139,7 @@ export class ScreenshotProcessor {
     return `
       <html>
         <head>
-          <script type="module" src="${baseUrl}/model-viewer.js"></script>
+          <script type="module" src="${baseUrl}/api/model-viewer-script"></script>
           <style>
             body { 
               margin: 0; 
