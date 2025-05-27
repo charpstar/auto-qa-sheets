@@ -215,346 +215,173 @@ export class ScreenshotProcessor {
     }
   }
 
-  private async takeScreenshot(
-    browser: any,
-    glbDataURL: string,
-    angle: string,
-    articleId: string
-  ): Promise<string> {
-    const page = await browser.newPage();
+  // Main processing function - ONE MODEL-VIEWER INSTANCE ONLY
+  async processScreenshots(job: QAJob): Promise<ScreenshotResult> {
+    const logs: string[] = [];
+    const screenshots: string[] = [];
+    let modelStats: any = null;
 
     try {
-      await page.setViewport({ width: 800, height: 600 });
+      logs.push(
+        `Starting screenshot processing for Article ID: ${job.articleId}`
+      );
 
-      const htmlContent = this.generateModelViewerHTML(glbDataURL, angle);
-      await page.setContent(htmlContent, { waitUntil: "networkidle0" });
+      // Step 1: Download GLB file
+      logs.push("Downloading GLB file from Google Drive...");
+      const glbBuffer = await this.downloadGLB(job.articleId);
+      logs.push(`GLB file downloaded successfully: ${glbBuffer.length} bytes`);
 
-      // Wait for model-viewer to load and render with increased timeout
-      await page.waitForSelector("model-viewer", { timeout: 60000 });
+      // Step 2: Convert to data URL
+      const glbDataURL = this.glbBufferToDataURL(glbBuffer);
+      logs.push("GLB converted to data URL for model-viewer");
 
-      // Additional wait for model to fully load
-      await page.evaluate(() => {
-        return new Promise((resolve) => {
-          const modelViewer = document.querySelector("model-viewer") as any;
-          if (modelViewer) {
-            if (modelViewer.modelIsVisible) {
-              resolve(true);
-            } else {
-              modelViewer.addEventListener("load", () => resolve(true));
-              // Fallback timeout
-              setTimeout(() => resolve(true), 10000);
-            }
-          } else {
-            setTimeout(() => resolve(true), 3000);
-          }
-        });
+      // Step 3: Launch browser
+      logs.push("Launching headless browser...");
+      const browser = await puppeteer.launch({
+        executablePath: "/usr/bin/chromium-browser",
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--no-first-run",
+          "--no-zygote",
+        ],
+        headless: true,
       });
 
-      // Take screenshot
-      const screenshotBuffer = await page.screenshot({
-        type: "png",
-        fullPage: false,
-      });
-
-      if (!screenshotBuffer) {
-        throw new Error(`Screenshot capture failed for angle: ${angle}`);
-      }
-
-      // Upload to Vercel Blob
-      const filename = `qa-screenshot-${articleId}-${angle}-${generateId()}.png`;
-      const { url } = await put(filename, screenshotBuffer as Buffer, {
-        access: "public",
-        contentType: "image/png",
-      });
-
-      console.log(`✅ Screenshot uploaded: ${angle} - ${url}`);
-      return url;
-    } finally {
-      await page.close();
-    }
-  }
-
-  // Main processing function
-async processScreenshots(job: QAJob): Promise<ScreenshotResult> {
-  const logs: string[] = [];
-  const screenshots: string[] = [];
-  let modelStats: any = null;
-
-  try {
-    logs.push(
-      `Starting screenshot processing for Article ID: ${job.articleId}`
-    );
-
-    // Step 1: Download GLB file
-    logs.push("Downloading GLB file from Google Drive...");
-    const glbBuffer = await this.downloadGLB(job.articleId);
-    logs.push(`GLB file downloaded successfully: ${glbBuffer.length} bytes`);
-
-    // Step 2: Convert to data URL
-    const glbDataURL = this.glbBufferToDataURL(glbBuffer);
-    logs.push("GLB converted to data URL for model-viewer");
-
-    // Step 3: Launch browser
-    logs.push("Launching headless browser...");
-    const browser = await puppeteer.launch({
-      executablePath: "/usr/bin/chromium-browser",
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-zygote",
-      ],
-      headless: true,
-    });
-
-    try {
-      // Step 4: Create ONE page for both stats and screenshots
-      const page = await browser.newPage();
       try {
-        await page.setViewport({ width: 800, height: 600 });
-        const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
-        await page.setContent(htmlContent, {
-          waitUntil: "networkidle0",
-        });
-
-        // Wait for model to load once
-        await page.waitForSelector("model-viewer", { timeout: 60000 });
-        await page.evaluate(() => {
-          return new Promise((resolve) => {
-            const viewer = document.querySelector("model-viewer") as any;
-            if (viewer?.modelIsVisible) {
-              resolve(true);
-            } else {
-              viewer?.addEventListener("load", () => resolve(true));
-              setTimeout(() => resolve(true), 10000);
+        // Step 4: Create ONE page for both stats and screenshots
+        const page = await browser.newPage();
+        try {
+          page.on("console", (msg) => {
+            const text = msg.text();
+            if (!text.includes("GPU stall due to ReadPixels")) {
+              console.log("PAGE LOG:", text);
             }
           });
-        });
 
-        // Step 5: Extract model stats from the loaded model
-        logs.push("Extracting model statistics...");
-        try {
-          modelStats = await this.extractModelStats(page, glbBuffer);
-          logs.push("✅ Model statistics extracted successfully");
-        } catch (statsError) {
-          logs.push(`⚠️ Failed to extract model stats: ${statsError}`);
-          modelStats = {
-            meshCount: 0,
-            materialCount: 0,
-            vertices: 0,
-            triangles: 0,
-            doubleSidedCount: 0,
-            doubleSidedMaterials: [],
-            fileSize: glbBuffer.length,
-          };
-        }
+          await page.setViewport({ width: 800, height: 600 });
+          const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
+          await page.setContent(htmlContent, {
+            waitUntil: "networkidle0",
+          });
 
-        // Step 6: Take screenshots using the same model-viewer
-        const angles = ["front", "back", "left", "right", "isometric"];
-        const cameraSettings: Record<string, string> = {
-          front: "0deg 75deg 4m",
-          back: "180deg 75deg 4m",
-          left: "-90deg 75deg 4m",
-          right: "90deg 75deg 4m",
-          isometric: "45deg 55deg 4m",
-        };
-
-        for (const angle of angles) {
-          logs.push(`Taking screenshot from ${angle} angle...`);
-          try {
-            // Change camera angle on existing model-viewer
-            await page.evaluate((orbitVal) => {
-              const mv = document.querySelector("model-viewer");
-              if (mv) {
-                mv.setAttribute("camera-orbit", orbitVal);
+          // Wait for model to load once
+          await page.waitForSelector("model-viewer", { timeout: 60000 });
+          await page.evaluate(() => {
+            return new Promise((resolve) => {
+              const viewer = document.querySelector("model-viewer") as any;
+              if (viewer?.modelIsVisible) {
+                resolve(true);
+              } else {
+                viewer?.addEventListener("load", () => resolve(true));
+                setTimeout(() => resolve(true), 10000);
               }
-            }, cameraSettings[angle]);
-
-            // Wait for camera to move
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-
-            // Take screenshot
-            const screenshotBuffer = await page.screenshot({
-              type: "png",
-              fullPage: false,
             });
+          });
 
-            const filename = `qa-screenshot-${job.articleId}-${angle}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}.png`;
-            const { url } = await put(filename, Buffer.from(screenshotBuffer), {
-              access: "public",
-              contentType: "image/png",
-            });
-
-            screenshots.push(url);
-            logs.push(`✅ ${angle} screenshot completed: ${url}`);
-          } catch (error) {
-            const errorMsg = `Failed to capture ${angle} screenshot: ${
-              error instanceof Error ? error.message : "Unknown error"
-            }`;
-            logs.push(`❌ ${errorMsg}`);
-            console.error(errorMsg);
-            // Continue with other angles even if one fails
+          // Step 5: Extract model stats from the loaded model
+          logs.push("Extracting model statistics...");
+          try {
+            modelStats = await this.extractModelStats(page, glbBuffer);
+            logs.push("✅ Model statistics extracted successfully");
+          } catch (statsError) {
+            logs.push(`⚠️ Failed to extract model stats: ${statsError}`);
+            modelStats = {
+              meshCount: 0,
+              materialCount: 0,
+              vertices: 0,
+              triangles: 0,
+              doubleSidedCount: 0,
+              doubleSidedMaterials: [],
+              fileSize: glbBuffer.length,
+            };
           }
+
+          // Step 6: Take screenshots using the same model-viewer
+          const angles = ["front", "back", "left", "right", "isometric"];
+          const cameraSettings: Record<string, string> = {
+            front: "0deg 75deg 4m",
+            back: "180deg 75deg 4m",
+            left: "-90deg 75deg 4m",
+            right: "90deg 75deg 4m",
+            isometric: "45deg 55deg 4m",
+          };
+
+          for (const angle of angles) {
+            logs.push(`Taking screenshot from ${angle} angle...`);
+            try {
+              // Change camera angle on existing model-viewer
+              await page.evaluate((orbitVal) => {
+                const mv = document.querySelector("model-viewer");
+                if (mv) {
+                  mv.setAttribute("camera-orbit", orbitVal);
+                }
+              }, cameraSettings[angle]);
+
+              // Wait for camera to move
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+
+              // Take screenshot
+              const screenshotBuffer = await page.screenshot({
+                type: "png",
+                fullPage: false,
+              });
+
+              const filename = `qa-screenshot-${
+                job.articleId
+              }-${angle}-${generateId()}.png`;
+              const { url } = await put(
+                filename,
+                Buffer.from(screenshotBuffer),
+                {
+                  access: "public",
+                  contentType: "image/png",
+                }
+              );
+
+              screenshots.push(url);
+              logs.push(`✅ ${angle} screenshot completed: ${url}`);
+            } catch (error) {
+              const errorMsg = `Failed to capture ${angle} screenshot: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`;
+              logs.push(`❌ ${errorMsg}`);
+              console.error(errorMsg);
+              // Continue with other angles even if one fails
+            }
+          }
+        } finally {
+          await page.close();
         }
       } finally {
-        await page.close();
+        await browser.close();
+        logs.push("Browser closed");
       }
-    } finally {
-      await browser.close();
-      logs.push("Browser closed");
+
+      if (screenshots.length === 0) {
+        throw new Error("No screenshots were successfully captured");
+      }
+
+      logs.push(
+        `Screenshot processing completed: ${screenshots.length} images generated`
+      );
+
+      return {
+        screenshots,
+        modelStats,
+        processingLogs: logs,
+      };
+    } catch (error) {
+      const errorMsg = `Screenshot processing failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`;
+      logs.push(`❌ ${errorMsg}`);
+      throw new Error(errorMsg);
     }
-
-    if (screenshots.length === 0) {
-      throw new Error("No screenshots were successfully captured");
-    }
-
-    logs.push(
-      `Screenshot processing completed: ${screenshots.length} images generated`
-    );
-
-    return {
-      screenshots,
-      modelStats,
-      processingLogs: logs,
-    };
-  } catch (error) {
-    const errorMsg = `Screenshot processing failed: ${
-      error instanceof Error ? error.message : "Unknown error"
-    }`;
-    logs.push(`❌ ${errorMsg}`);
-    throw new Error(errorMsg);
   }
 }
-// Helper method (add this to your class if it doesn't exist)
-private generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-// async processScreenshots(job: QAJob): Promise<ScreenshotResult> {
-//   const logs: string[] = [];
-//   const screenshots: string[] = [];
-//   let modelStats: any = null;
-
-//   try {
-//     logs.push(
-//       `Starting screenshot processing for Article ID: ${job.articleId}`
-//     );
-
-//     const glbBuffer = await this.downloadGLB(job.articleId);
-//     logs.push(`GLB file downloaded successfully: ${glbBuffer.length} bytes`);
-
-//     const glbDataURL = this.glbBufferToDataURL(glbBuffer);
-//     logs.push("GLB converted to data URL for model-viewer");
-
-//     const browser = await puppeteer.launch({
-//       executablePath: "/usr/bin/chromium-browser",
-//       args: [
-//         "--no-sandbox",
-//         "--disable-setuid-sandbox",
-//         "--disable-dev-shm-usage",
-//         "--disable-gpu",
-//         "--no-first-run",
-//         "--no-zygote",
-//       ],
-//       headless: true,
-//     });
-
-//     const page = await browser.newPage();
-//     try {
-//       page.on("console", (msg) => console.log("PAGE LOG:", msg.text()));
-//       await page.setViewport({ width: 800, height: 600 });
-
-//       const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
-//       await page.setContent(htmlContent, { waitUntil: "networkidle0" });
-
-//       // Wait for model to fully load
-//       await page.waitForSelector("model-viewer", { timeout: 60000 });
-//       await page.evaluate(() => {
-//         return new Promise((resolve) => {
-//           const viewer = document.querySelector("model-viewer") as any;
-//           if (viewer?.modelIsVisible) {
-//             resolve(true);
-//           } else {
-//             viewer?.addEventListener("load", () => resolve(true));
-//             setTimeout(() => resolve(true), 10000);
-//           }
-//         });
-//       });
-
-//       // ✅ Extract stats after model is loaded
-//       modelStats = await this.extractModelStats(page, glbBuffer);
-//       logs.push("✅ Model statistics extracted successfully");
-
-//       const cameraSettings: Record<string, string> = {
-//         front: "0deg 75deg 4m",
-//         back: "180deg 75deg 4m",
-//         left: "-90deg 75deg 4m",
-//         right: "90deg 75deg 4m",
-//         isometric: "45deg 55deg 4m",
-//       };
-
-//       for (const [angle, orbit] of Object.entries(cameraSettings)) {
-//         logs.push(`Taking screenshot from ${angle} angle...`);
-//         try {
-//           await page.evaluate((orbitVal) => {
-//             const mv = document.querySelector("model-viewer");
-//             if (mv) mv.setAttribute("camera-orbit", orbitVal);
-//           }, orbit);
-
-//           await new Promise((resolve) => setTimeout(resolve, 1000));
-
-//           const screenshotBuffer = await page.screenshot({
-//             type: "png",
-//             fullPage: false,
-//           });
-
-//           const filename = `qa-screenshot-${
-//             job.articleId
-//           }-${angle}-${generateId()}.png`;
-//           const { url } = await put(filename, Buffer.from(screenshotBuffer), {
-//             access: "public",
-//             contentType: "image/png",
-//           });
-
-//           screenshots.push(url);
-//           logs.push(`✅ ${angle} screenshot completed: ${url}`);
-//         } catch (error) {
-//           const errorMsg = `Failed to capture ${angle} screenshot: ${
-//             error instanceof Error ? error.message : "Unknown error"
-//           }`;
-//           logs.push(`❌ ${errorMsg}`);
-//           console.error(errorMsg);
-//         }
-//       }
-//     } finally {
-//       await page.close();
-//       await browser.close();
-//       logs.push("Browser closed");
-//     }
-
-//     if (screenshots.length === 0) {
-//       throw new Error("No screenshots were successfully captured");
-//     }
-
-//     logs.push(
-//       `Screenshot processing completed: ${screenshots.length} images generated`
-//     );
-
-//     return {
-//       screenshots,
-//       modelStats,
-//       processingLogs: logs,
-//     };
-//   } catch (error) {
-//     const errorMsg = `Screenshot processing failed: ${
-//       error instanceof Error ? error.message : "Unknown error"
-//     }`;
-//     logs.push(`❌ ${errorMsg}`);
-//     throw new Error(errorMsg);
-//   }
-// }
 
 // Export singleton instance
 export const screenshotProcessor = new ScreenshotProcessor();
