@@ -118,8 +118,11 @@ export class ScreenshotProcessor {
     }
   }
 
-  // Generate HTML for model-viewer with local script via API route
-  private generateModelViewerHTML(glbUrl: string, cameraAngle: string): string {
+  // Generate HTML for model-viewer with embedded script
+  private async generateModelViewerHTML(
+    glbUrl: string,
+    cameraAngle: string
+  ): Promise<string> {
     const cameraSettings = {
       front: 'camera-orbit="0deg 75deg 4m"',
       back: 'camera-orbit="180deg 75deg 4m"',
@@ -129,53 +132,85 @@ export class ScreenshotProcessor {
       isometric: 'camera-orbit="45deg 55deg 4m"',
     };
 
-    // Get base URL for API route
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : process.env.NEXT_PUBLIC_BASE_URL
-      ? process.env.NEXT_PUBLIC_BASE_URL
-      : "http://localhost:3000";
+    // Read the model-viewer script content
+    const fs = await import("fs");
+    const path = await import("path");
 
-    return `
-      <html>
-        <head>
-          <script type="module" src="${baseUrl}/api/model-viewer-script"></script>
-          <style>
-            body { 
-              margin: 0; 
-              background: #f5f5f5;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              height: 100vh;
-            }
-            model-viewer {
-              width: 800px;
-              height: 600px;
-              background-color: white;
-              border-radius: 8px;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            }
-          </style>
-        </head>
-        <body>
-          <model-viewer
-            src="${glbUrl}"
-            ${
-              cameraSettings[cameraAngle as keyof typeof cameraSettings] ||
-              cameraSettings.front
-            }
-            auto-rotate="false"
-            camera-controls="false"
-            disable-zoom="true"
-            exposure="1"
-            shadow-intensity="1"
-            alt="3D model screenshot"
-            loading="eager"
-          ></model-viewer>
-        </body>
-      </html>
-    `;
+    const scriptPath = path.join(process.cwd(), "public", "model-viewer.js");
+    console.log(`🔍 Looking for model-viewer script at: ${scriptPath}`);
+
+    // Check if file exists
+    const fileExists = fs.existsSync(scriptPath);
+    console.log(`📁 File exists: ${fileExists}`);
+
+    if (!fileExists) {
+      // List files in public directory
+      try {
+        const publicDir = path.join(process.cwd(), "public");
+        const files = fs.readdirSync(publicDir);
+        console.log(`📂 Files in public directory:`, files);
+      } catch (err) {
+        console.error(`❌ Could not read public directory:`, err);
+      }
+      throw new Error(`Custom model-viewer script not found at: ${scriptPath}`);
+    }
+
+    try {
+      const scriptContent = fs.readFileSync(scriptPath, "utf8");
+      console.log(
+        `✅ Successfully read model-viewer script: ${scriptContent.length} characters`
+      );
+
+      return `
+        <html>
+          <head>
+            <script type="module">
+              ${scriptContent}
+            </script>
+            <style>
+              body { 
+                margin: 0; 
+                background: #f5f5f5;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+              }
+              model-viewer {
+                width: 800px;
+                height: 600px;
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+              }
+            </style>
+          </head>
+          <body>
+            <model-viewer
+              src="${glbUrl}"
+              ${
+                cameraSettings[cameraAngle as keyof typeof cameraSettings] ||
+                cameraSettings.front
+              }
+              auto-rotate="false"
+              camera-controls="false"
+              disable-zoom="true"
+              exposure="1"
+              shadow-intensity="1"
+              alt="3D model screenshot"
+              loading="eager"
+            ></model-viewer>
+          </body>
+        </html>
+      `;
+    } catch (error) {
+      console.error("❌ Failed to read model-viewer.js:", error);
+      throw new Error(
+        `Failed to read custom model-viewer script: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
   }
 
   // Extract model statistics from the loaded model
@@ -342,7 +377,10 @@ export class ScreenshotProcessor {
           await page.setViewport({ width: 800, height: 600 });
 
           console.log("📝 Generating HTML content...");
-          const htmlContent = this.generateModelViewerHTML(glbUrl, "front");
+          const htmlContent = await this.generateModelViewerHTML(
+            glbUrl,
+            "front"
+          );
 
           console.log("🌐 Loading HTML content...");
           await page.setContent(htmlContent, {
