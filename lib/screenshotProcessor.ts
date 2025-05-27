@@ -275,52 +275,68 @@ export class ScreenshotProcessor {
   }
 
   // Main processing function
-  async processScreenshots(job: QAJob): Promise<ScreenshotResult> {
-    const logs: string[] = [];
-    const screenshots: string[] = [];
-    let modelStats: any = null;
+async processScreenshots(job: QAJob): Promise<ScreenshotResult> {
+  const logs: string[] = [];
+  const screenshots: string[] = [];
+  let modelStats: any = null;
+
+  try {
+    logs.push(
+      `Starting screenshot processing for Article ID: ${job.articleId}`
+    );
+
+    // Step 1: Download GLB file
+    logs.push("Downloading GLB file from Google Drive...");
+    const glbBuffer = await this.downloadGLB(job.articleId);
+    logs.push(`GLB file downloaded successfully: ${glbBuffer.length} bytes`);
+
+    // Step 2: Convert to data URL
+    const glbDataURL = this.glbBufferToDataURL(glbBuffer);
+    logs.push("GLB converted to data URL for model-viewer");
+
+    // Step 3: Launch browser
+    logs.push("Launching headless browser...");
+    const browser = await puppeteer.launch({
+      executablePath: "/usr/bin/chromium-browser",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-zygote",
+      ],
+      headless: true,
+    });
 
     try {
-      logs.push(
-        `Starting screenshot processing for Article ID: ${job.articleId}`
-      );
-
-      // Step 1: Download GLB file
-      logs.push("Downloading GLB file from Google Drive...");
-      const glbBuffer = await this.downloadGLB(job.articleId);
-      logs.push(`GLB file downloaded successfully: ${glbBuffer.length} bytes`);
-
-      // Step 2: Convert to data URL
-      const glbDataURL = this.glbBufferToDataURL(glbBuffer);
-      logs.push("GLB converted to data URL for model-viewer");
-
-      // Step 3: Launch browser
-      logs.push("Launching headless browser...");
-      const browser = await puppeteer.launch({
-        executablePath: "/usr/bin/chromium-browser",
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--no-first-run",
-          "--no-zygote",
-        ],
-        headless: true,
-      });
-
+      // Step 4: Create ONE page for both stats and screenshots
+      const page = await browser.newPage();
       try {
-        // Step 4: Extract model stats first (using the first page)
-        logs.push("Extracting model statistics...");
-        const statsPage = await browser.newPage();
-        try {
-          await statsPage.setViewport({ width: 800, height: 600 });
-          const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
-          await statsPage.setContent(htmlContent, {
-            waitUntil: "networkidle0",
-          });
+        await page.setViewport({ width: 800, height: 600 });
+        const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
+        await page.setContent(htmlContent, {
+          waitUntil: "networkidle0",
+        });
 
-          modelStats = await this.extractModelStats(statsPage, glbBuffer);
+        // Wait for model to load once
+        await page.waitForSelector("model-viewer", { timeout: 60000 });
+        await page.evaluate(() => {
+          return new Promise((resolve) => {
+            const viewer = document.querySelector("model-viewer") as any;
+            if (viewer?.modelIsVisible) {
+              resolve(true);
+            } else {
+              viewer?.addEventListener("load", () => resolve(true));
+              setTimeout(() => resolve(true), 10000);
+            }
+          });
+        });
+
+        // Step 5: Extract model stats from the loaded model
+        logs.push("Extracting model statistics...");
+        try {
+          modelStats = await this.extractModelStats(page, glbBuffer);
           logs.push("✅ Model statistics extracted successfully");
         } catch (statsError) {
           logs.push(`⚠️ Failed to extract model stats: ${statsError}`);
@@ -333,24 +349,46 @@ export class ScreenshotProcessor {
             doubleSidedMaterials: [],
             fileSize: glbBuffer.length,
           };
-        } finally {
-          await statsPage.close();
         }
 
-        // Step 5: Take screenshots from different angles
+        // Step 6: Take screenshots using the same model-viewer
         const angles = ["front", "back", "left", "right", "isometric"];
+        const cameraSettings: Record<string, string> = {
+          front: "0deg 75deg 4m",
+          back: "180deg 75deg 4m",
+          left: "-90deg 75deg 4m",
+          right: "90deg 75deg 4m",
+          isometric: "45deg 55deg 4m",
+        };
 
         for (const angle of angles) {
           logs.push(`Taking screenshot from ${angle} angle...`);
           try {
-            const screenshotUrl = await this.takeScreenshot(
-              browser,
-              glbDataURL,
-              angle,
-              job.articleId
-            );
-            screenshots.push(screenshotUrl);
-            logs.push(`✅ ${angle} screenshot completed: ${screenshotUrl}`);
+            // Change camera angle on existing model-viewer
+            await page.evaluate((orbitVal) => {
+              const mv = document.querySelector("model-viewer");
+              if (mv) {
+                mv.setAttribute("camera-orbit", orbitVal);
+              }
+            }, cameraSettings[angle]);
+
+            // Wait for camera to move
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            // Take screenshot
+            const screenshotBuffer = await page.screenshot({
+              type: "png",
+              fullPage: false,
+            });
+
+            const filename = `qa-screenshot-${job.articleId}-${angle}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}.png`;
+            const { url } = await put(filename, Buffer.from(screenshotBuffer), {
+              access: "public",
+              contentType: "image/png",
+            });
+
+            screenshots.push(url);
+            logs.push(`✅ ${angle} screenshot completed: ${url}`);
           } catch (error) {
             const errorMsg = `Failed to capture ${angle} screenshot: ${
               error instanceof Error ? error.message : "Unknown error"
@@ -361,31 +399,37 @@ export class ScreenshotProcessor {
           }
         }
       } finally {
-        await browser.close();
-        logs.push("Browser closed");
+        await page.close();
       }
-
-      if (screenshots.length === 0) {
-        throw new Error("No screenshots were successfully captured");
-      }
-
-      logs.push(
-        `Screenshot processing completed: ${screenshots.length} images generated`
-      );
-
-      return {
-        screenshots,
-        modelStats,
-        processingLogs: logs,
-      };
-    } catch (error) {
-      const errorMsg = `Screenshot processing failed: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`;
-      logs.push(`❌ ${errorMsg}`);
-      throw new Error(errorMsg);
+    } finally {
+      await browser.close();
+      logs.push("Browser closed");
     }
+
+    if (screenshots.length === 0) {
+      throw new Error("No screenshots were successfully captured");
+    }
+
+    logs.push(
+      `Screenshot processing completed: ${screenshots.length} images generated`
+    );
+
+    return {
+      screenshots,
+      modelStats,
+      processingLogs: logs,
+    };
+  } catch (error) {
+    const errorMsg = `Screenshot processing failed: ${
+      error instanceof Error ? error.message : "Unknown error"
+    }`;
+    logs.push(`❌ ${errorMsg}`);
+    throw new Error(errorMsg);
   }
+}
+// Helper method (add this to your class if it doesn't exist)
+private generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
 // async processScreenshots(job: QAJob): Promise<ScreenshotResult> {
