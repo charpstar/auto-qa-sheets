@@ -499,20 +499,21 @@ export class ScreenshotProcessor {
               // Take screenshot
               console.log(`📸 Capturing screenshot (${angle})...`);
               const screenshotBuffer = await page.screenshot({
-                type: "png",
+                type: "jpeg", // Use JPEG for better compression
+                quality: 90, // Set quality (0-100, only works with JPEG)
                 fullPage: false,
               });
 
               console.log(`☁️ Uploading screenshot (${angle})...`);
               const filename = `qa-screenshot-${
                 job.articleId
-              }-${angle}-${generateId()}.png`;
+              }-${angle}-${generateId()}.jpg`;
               const { url } = await put(
                 filename,
                 Buffer.from(screenshotBuffer),
                 {
                   access: "public",
-                  contentType: "image/png",
+                  contentType: "image/jpeg",
                 }
               );
 
