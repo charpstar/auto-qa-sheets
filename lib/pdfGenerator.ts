@@ -327,8 +327,8 @@ export class PDFGenerator {
           (stats.vertices > 0 || stats.meshCount > 0 || stats.materialCount > 0)
         ) {
           // Use actual model stats
-          addPropertyLine("Polycount", stats.vertices || 0, 150000);
-          addPropertyLine("Triangles", stats.triangles || 0);
+          addPropertyLine("Polycount", stats.triangles || 0, 150000);
+          addPropertyLine("Vertices", stats.vertices || 0);
           addPropertyLine("Mesh Count", stats.meshCount || 0, 5);
           addPropertyLine("Material Count", stats.materialCount || 0, 5);
           addPropertyLine(
