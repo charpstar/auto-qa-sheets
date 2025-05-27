@@ -356,24 +356,47 @@ export class ScreenshotProcessor {
           await page.waitForSelector("model-viewer", { timeout: 60000 });
           console.log("✅ Model-viewer element found");
 
-          console.log("🎯 Waiting for model to become visible...");
+          console.log("🎯 Waiting for model to become visible and loaded...");
           await page.evaluate(() => {
             return new Promise((resolve) => {
               const viewer = document.querySelector("model-viewer") as any;
-              if (viewer?.modelIsVisible) {
-                console.log("Model is already visible");
-                resolve(true);
-              } else {
-                console.log("Waiting for model load event...");
-                viewer?.addEventListener("load", () => {
-                  console.log("Model load event fired");
+
+              const checkModelLoaded = () => {
+                // Check multiple conditions for model readiness
+                if (viewer?.modelIsVisible && viewer?.loaded) {
+                  console.log("Model is visible and loaded");
                   resolve(true);
+                  return true;
+                }
+                return false;
+              };
+
+              // Try immediate check
+              if (checkModelLoaded()) return;
+
+              console.log("Waiting for model to load...");
+
+              // Listen for multiple events
+              const events = ["load", "model-visibility", "progress"];
+              events.forEach((event) => {
+                viewer?.addEventListener(event, () => {
+                  console.log(`Model event fired: ${event}`);
+                  checkModelLoaded();
                 });
-                setTimeout(() => {
-                  console.log("Model load timeout, proceeding anyway");
-                  resolve(true);
-                }, 15000);
-              }
+              });
+
+              // Fallback with longer timeout for complex models
+              setTimeout(() => {
+                console.log("Model load timeout, checking final state...");
+                const finalCheck = viewer?.modelIsVisible || viewer?.loaded;
+                console.log(
+                  "Final model state - visible:",
+                  viewer?.modelIsVisible,
+                  "loaded:",
+                  viewer?.loaded
+                );
+                resolve(true);
+              }, 20000); // Increased to 20 seconds
             });
           });
           console.log("✅ Model is loaded and ready");
@@ -427,7 +450,26 @@ export class ScreenshotProcessor {
 
               // Wait for camera to move
               console.log(`⏳ Waiting for camera transition (${angle})...`);
-              await new Promise((resolve) => setTimeout(resolve, 2000));
+              await new Promise((resolve) => setTimeout(resolve, 3000)); // Increased wait time
+
+              // Additional wait to ensure model is fully rendered
+              await page.evaluate(() => {
+                return new Promise((resolve) => {
+                  // Force several render frames
+                  let frameCount = 0;
+                  const waitForRender = () => {
+                    frameCount++;
+                    if (frameCount < 10) {
+                      // More frames
+                      requestAnimationFrame(waitForRender);
+                    } else {
+                      // Final delay for WebGL to finish
+                      setTimeout(resolve, 1000);
+                    }
+                  };
+                  requestAnimationFrame(waitForRender);
+                });
+              });
 
               // Take screenshot
               console.log(`📸 Capturing screenshot (${angle})...`);
