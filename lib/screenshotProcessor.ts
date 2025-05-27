@@ -118,7 +118,7 @@ export class ScreenshotProcessor {
     }
   }
 
-  // Generate HTML for model-viewer with external GLB URL
+  // Generate HTML for model-viewer with local script
   private generateModelViewerHTML(glbUrl: string, cameraAngle: string): string {
     const cameraSettings = {
       front: 'camera-orbit="0deg 75deg 4m"',
@@ -129,10 +129,17 @@ export class ScreenshotProcessor {
       isometric: 'camera-orbit="45deg 55deg 4m"',
     };
 
+    // Get base URL for local script
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXT_PUBLIC_BASE_URL
+      ? process.env.NEXT_PUBLIC_BASE_URL
+      : "http://localhost:3000";
+
     return `
       <html>
         <head>
-          <script type="module" src="https://demosetc.b-cdn.net/QATool/model-viewer.js"></script>
+          <script type="module" src="${baseUrl}/model-viewer.js"></script>
           <style>
             body { 
               margin: 0; 
@@ -338,7 +345,10 @@ export class ScreenshotProcessor {
           const htmlContent = this.generateModelViewerHTML(glbUrl, "front");
 
           console.log("🌐 Loading HTML content...");
-          await page.setContent(htmlContent, { waitUntil: "networkidle0" });
+          await page.setContent(htmlContent, {
+            waitUntil: "domcontentloaded",
+            timeout: 60000,
+          });
           console.log("✅ HTML content loaded");
 
           // Wait for model to load once
