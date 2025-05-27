@@ -162,7 +162,7 @@ Output *only* a single valid JSON object:
    }
  ],
  "summary": "Brief description of visual issues found. Technical validation: [results of technical checks]. Similarity scores: silhouette X%, proportion Y%, color/material Z%, overall W%",
- "status": "Approved or Not Approved based on >90% rule for all visual scores AND all technical specs within limits"
+ "status": "Approved or Not Approved based on >90% rule for all visual scores AND all technical specs within limits. If Double sided is unknown, Dont mention it."
 }`;
   }
 
