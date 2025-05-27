@@ -121,7 +121,9 @@ export class ScreenshotProcessor {
   // Generate HTML for model-viewer with script as data URL
   private async generateModelViewerHTML(
     glbUrl: string,
-    cameraAngle: string
+    cameraAngle: string,
+    width: number = 1600,
+    height: number = 1200
   ): Promise<string> {
     const cameraSettings = {
       front: 'camera-orbit="0deg 75deg 4m"',
@@ -164,8 +166,8 @@ export class ScreenshotProcessor {
                 height: 100vh;
               }
               model-viewer {
-                width: 800px;
-                height: 600px;
+                width: ${width}px;
+                height: ${height}px;
                 background-color: white;
                 border-radius: 8px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.1);
@@ -360,13 +362,25 @@ export class ScreenshotProcessor {
             console.error("❌ PAGE ERROR:", error.message);
           });
 
-          console.log("🖼️ Setting viewport...");
-          await page.setViewport({ width: 800, height: 600 });
+          // Set higher resolution viewport for better quality screenshots
+          const screenshotWidth = 1600; // Configurable width
+          const screenshotHeight = 1200; // Configurable height
+
+          console.log(
+            `🖼️ Setting viewport to ${screenshotWidth}x${screenshotHeight}...`
+          );
+          await page.setViewport({
+            width: screenshotWidth,
+            height: screenshotHeight,
+            deviceScaleFactor: 1, // Can be increased for even higher resolution (e.g., 2 for 2x)
+          });
 
           console.log("📝 Generating HTML content...");
           const htmlContent = await this.generateModelViewerHTML(
             glbUrl,
-            "front"
+            "front",
+            screenshotWidth,
+            screenshotHeight
           );
 
           console.log("🌐 Loading HTML content...");
