@@ -35,23 +35,63 @@ export class ScreenshotProcessor {
 
     console.log(`📥 Downloading GLB from: ${url}`);
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ articleId }),
-    });
+    // Retry logic with verification
+    let lastError: Error | null = null;
+    const maxRetries = 3;
+    const retryDelay = 2000; // 2 seconds
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Failed to download GLB for article ${articleId}: ${response.status} ${response.statusText} - ${errorText}`
-      );
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 GLB download attempt ${attempt}/${maxRetries}`);
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ articleId }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(
+            `Failed to download GLB for article ${articleId}: ${response.status} ${response.statusText} - ${errorText}`
+          );
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // Verify the buffer is valid and not empty
+        if (buffer.length === 0) {
+          throw new Error("Downloaded GLB file is empty");
+        }
+
+        // Basic GLB header validation (glTF Binary starts with "glTF")
+        if (buffer.length < 4 || buffer.toString("ascii", 0, 4) !== "glTF") {
+          throw new Error(
+            "Downloaded file is not a valid GLB (missing glTF header)"
+          );
+        }
+
+        console.log(`✅ GLB downloaded and verified: ${buffer.length} bytes`);
+        return buffer;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`❌ GLB download attempt ${attempt} failed:`, error);
+
+        if (attempt < maxRetries) {
+          console.log(`⏳ Waiting ${retryDelay}ms before retry...`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        }
+      }
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    throw new Error(
+      `GLB download failed after ${maxRetries} attempts: ${
+        lastError?.message || "Unknown error"
+      }`
+    );
   }
 
   // Convert GLB buffer to data URL for model-viewer
