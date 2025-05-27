@@ -283,10 +283,7 @@ export class ScreenshotProcessor {
           const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
 
           console.log("🌐 Loading HTML content...");
-          await page.setContent(htmlContent, {
-            waitUntil: "networkidle0",
-            timeout: 60000,
-          });
+          await page.setContent(htmlContent, { waitUntil: "networkidle0" });
           console.log("✅ HTML content loaded");
 
           // Wait for model to load once
