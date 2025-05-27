@@ -118,7 +118,7 @@ export class ScreenshotProcessor {
     }
   }
 
-  // Generate HTML for model-viewer with embedded script
+  // Generate HTML for model-viewer with script as data URL
   private async generateModelViewerHTML(
     glbUrl: string,
     cameraAngle: string
@@ -139,34 +139,21 @@ export class ScreenshotProcessor {
     const scriptPath = path.join(process.cwd(), "public", "model-viewer.js");
     console.log(`🔍 Looking for model-viewer script at: ${scriptPath}`);
 
-    // Check if file exists
-    const fileExists = fs.existsSync(scriptPath);
-    console.log(`📁 File exists: ${fileExists}`);
-
-    if (!fileExists) {
-      // List files in public directory
-      try {
-        const publicDir = path.join(process.cwd(), "public");
-        const files = fs.readdirSync(publicDir);
-        console.log(`📂 Files in public directory:`, files);
-      } catch (err) {
-        console.error(`❌ Could not read public directory:`, err);
-      }
-      throw new Error(`Custom model-viewer script not found at: ${scriptPath}`);
-    }
-
     try {
       const scriptContent = fs.readFileSync(scriptPath, "utf8");
       console.log(
         `✅ Successfully read model-viewer script: ${scriptContent.length} characters`
       );
 
+      // Create a data URL for the script to avoid CORS and embedding issues
+      const scriptDataUrl = `data:text/javascript;base64,${Buffer.from(
+        scriptContent
+      ).toString("base64")}`;
+
       return `
         <html>
           <head>
-            <script type="module">
-              ${scriptContent}
-            </script>
+            <script type="module" src="${scriptDataUrl}"></script>
             <style>
               body { 
                 margin: 0; 
