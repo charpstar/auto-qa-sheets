@@ -222,20 +222,28 @@ export class ScreenshotProcessor {
     let modelStats: any = null;
 
     try {
+      console.log(
+        `🚀 Starting screenshot processing for Article ID: ${job.articleId}`
+      );
       logs.push(
         `Starting screenshot processing for Article ID: ${job.articleId}`
       );
 
       // Step 1: Download GLB file
+      console.log("📥 Downloading GLB file...");
       logs.push("Downloading GLB file from Google Drive...");
       const glbBuffer = await this.downloadGLB(job.articleId);
+      console.log(`✅ GLB downloaded: ${glbBuffer.length} bytes`);
       logs.push(`GLB file downloaded successfully: ${glbBuffer.length} bytes`);
 
       // Step 2: Convert to data URL
+      console.log("🔄 Converting GLB to data URL...");
       const glbDataURL = this.glbBufferToDataURL(glbBuffer);
+      console.log("✅ GLB converted to data URL");
       logs.push("GLB converted to data URL for model-viewer");
 
       // Step 3: Launch browser
+      console.log("🚀 Launching browser...");
       logs.push("Launching headless browser...");
       const browser = await puppeteer.launch({
         executablePath: "/usr/bin/chromium-browser",
@@ -248,10 +256,13 @@ export class ScreenshotProcessor {
           "--no-zygote",
         ],
         headless: true,
+        timeout: 60000,
       });
+      console.log("✅ Browser launched successfully");
 
       try {
         // Step 4: Create ONE page for both stats and screenshots
+        console.log("📄 Creating browser page...");
         const page = await browser.newPage();
         try {
           page.on("console", (msg) => {
@@ -261,32 +272,59 @@ export class ScreenshotProcessor {
             }
           });
 
-          await page.setViewport({ width: 800, height: 600 });
-          const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
-          await page.setContent(htmlContent, {
-            waitUntil: "networkidle0",
+          page.on("pageerror", (error) => {
+            console.error("❌ PAGE ERROR:", error.message);
           });
 
+          console.log("🖼️ Setting viewport...");
+          await page.setViewport({ width: 800, height: 600 });
+
+          console.log("📝 Generating HTML content...");
+          const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
+
+          console.log("🌐 Loading HTML content...");
+          await page.setContent(htmlContent, {
+            waitUntil: "networkidle0",
+            timeout: 60000,
+          });
+          console.log("✅ HTML content loaded");
+
           // Wait for model to load once
+          console.log("⏳ Waiting for model-viewer to load...");
           await page.waitForSelector("model-viewer", { timeout: 60000 });
+          console.log("✅ Model-viewer element found");
+
+          console.log("🎯 Waiting for model to become visible...");
           await page.evaluate(() => {
             return new Promise((resolve) => {
               const viewer = document.querySelector("model-viewer") as any;
               if (viewer?.modelIsVisible) {
+                console.log("Model is already visible");
                 resolve(true);
               } else {
-                viewer?.addEventListener("load", () => resolve(true));
-                setTimeout(() => resolve(true), 10000);
+                console.log("Waiting for model load event...");
+                viewer?.addEventListener("load", () => {
+                  console.log("Model load event fired");
+                  resolve(true);
+                });
+                setTimeout(() => {
+                  console.log("Model load timeout, proceeding anyway");
+                  resolve(true);
+                }, 15000);
               }
             });
           });
+          console.log("✅ Model is loaded and ready");
 
           // Step 5: Extract model stats from the loaded model
+          console.log("📊 Extracting model statistics...");
           logs.push("Extracting model statistics...");
           try {
             modelStats = await this.extractModelStats(page, glbBuffer);
+            console.log("✅ Model stats extracted:", modelStats);
             logs.push("✅ Model statistics extracted successfully");
           } catch (statsError) {
+            console.error("❌ Stats extraction failed:", statsError);
             logs.push(`⚠️ Failed to extract model stats: ${statsError}`);
             modelStats = {
               meshCount: 0,
@@ -300,6 +338,7 @@ export class ScreenshotProcessor {
           }
 
           // Step 6: Take screenshots using the same model-viewer
+          console.log("📸 Starting screenshot capture...");
           const angles = ["front", "back", "left", "right", "isometric"];
           const cameraSettings: Record<string, string> = {
             front: "0deg 75deg 4m",
@@ -310,6 +349,7 @@ export class ScreenshotProcessor {
           };
 
           for (const angle of angles) {
+            console.log(`📷 Taking ${angle} screenshot...`);
             logs.push(`Taking screenshot from ${angle} angle...`);
             try {
               // Change camera angle on existing model-viewer
@@ -317,18 +357,24 @@ export class ScreenshotProcessor {
                 const mv = document.querySelector("model-viewer");
                 if (mv) {
                   mv.setAttribute("camera-orbit", orbitVal);
+                  console.log(`Camera set to: ${orbitVal}`);
+                } else {
+                  console.error("Model-viewer not found!");
                 }
               }, cameraSettings[angle]);
 
               // Wait for camera to move
-              await new Promise((resolve) => setTimeout(resolve, 1000));
+              console.log(`⏳ Waiting for camera transition (${angle})...`);
+              await new Promise((resolve) => setTimeout(resolve, 2000));
 
               // Take screenshot
+              console.log(`📸 Capturing screenshot (${angle})...`);
               const screenshotBuffer = await page.screenshot({
                 type: "png",
                 fullPage: false,
               });
 
+              console.log(`☁️ Uploading screenshot (${angle})...`);
               const filename = `qa-screenshot-${
                 job.articleId
               }-${angle}-${generateId()}.png`;
@@ -342,28 +388,42 @@ export class ScreenshotProcessor {
               );
 
               screenshots.push(url);
+              console.log(`✅ ${angle} screenshot completed: ${url}`);
               logs.push(`✅ ${angle} screenshot completed: ${url}`);
             } catch (error) {
               const errorMsg = `Failed to capture ${angle} screenshot: ${
                 error instanceof Error ? error.message : "Unknown error"
               }`;
+              console.error(`❌ ${errorMsg}`);
               logs.push(`❌ ${errorMsg}`);
-              console.error(errorMsg);
               // Continue with other angles even if one fails
             }
           }
+        } catch (pageError) {
+          console.error("❌ Page error:", pageError);
+          throw pageError;
         } finally {
+          console.log("🔒 Closing browser page...");
           await page.close();
         }
+      } catch (browserError) {
+        console.error("❌ Browser error:", browserError);
+        throw browserError;
       } finally {
+        console.log("🔒 Closing browser...");
         await browser.close();
         logs.push("Browser closed");
       }
 
       if (screenshots.length === 0) {
-        throw new Error("No screenshots were successfully captured");
+        const error = new Error("No screenshots were successfully captured");
+        console.error("❌ Fatal error:", error.message);
+        throw error;
       }
 
+      console.log(
+        `🎉 Screenshot processing completed: ${screenshots.length} images generated`
+      );
       logs.push(
         `Screenshot processing completed: ${screenshots.length} images generated`
       );
@@ -377,6 +437,11 @@ export class ScreenshotProcessor {
       const errorMsg = `Screenshot processing failed: ${
         error instanceof Error ? error.message : "Unknown error"
       }`;
+      console.error("❌ FATAL ERROR:", errorMsg);
+      console.error(
+        "❌ Error stack:",
+        error instanceof Error ? error.stack : "No stack trace"
+      );
       logs.push(`❌ ${errorMsg}`);
       throw new Error(errorMsg);
     }
