@@ -161,8 +161,8 @@ Output *only* a single valid JSON object:
      "severity": "medium"
    }
  ],
- "summary": "Brief description of visual issues found. Technical validation: [results of technical checks]. Similarity scores: silhouette X%, proportion Y%, color/material Z%, overall W%",
- "status": "Approved or Not Approved based on >90% rule for all visual scores AND all technical specs within limits. If Double sided is unknown, Dont mention it."
+ "summary": "Brief description of visual issues found. Technical validation: [results of technical checks]. Similarity scores: silhouette X%, proportion Y%, color/material Z%, overall W%. If Double sided is unknown, Don't mention it, consider it approved if everything else is okay",
+ "status": "Approved or Not Approved based on >90% rule for all visual scores AND all technical specs within limits. If Double sided is unknown, Don't mention it, consider it approved if everything else is okay."
 }`;
   }
 
