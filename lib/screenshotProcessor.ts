@@ -94,17 +94,32 @@ export class ScreenshotProcessor {
     );
   }
 
-  // Convert GLB buffer to data URL for model-viewer
-  private glbBufferToDataURL(buffer: Buffer): string {
-    const base64 = buffer.toString("base64");
-    return `data:model/gltf-binary;base64,${base64}`;
+  // Upload GLB to blob storage and get public URL
+  private async uploadGLBToBlob(
+    glbBuffer: Buffer,
+    articleId: string
+  ): Promise<string> {
+    try {
+      console.log(`☁️ Uploading GLB to blob storage...`);
+      const filename = `qa-glb-${articleId}-${Date.now()}.glb`;
+      const { url } = await put(filename, glbBuffer, {
+        access: "public",
+        contentType: "model/gltf-binary",
+      });
+      console.log(`✅ GLB uploaded to blob: ${url}`);
+      return url;
+    } catch (error) {
+      console.error("❌ Failed to upload GLB to blob:", error);
+      throw new Error(
+        `Failed to upload GLB to blob storage: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
   }
 
-  // Generate HTML for model-viewer with different camera angles
-  private generateModelViewerHTML(
-    glbDataURL: string,
-    cameraAngle: string
-  ): string {
+  // Generate HTML for model-viewer with external GLB URL
+  private generateModelViewerHTML(glbUrl: string, cameraAngle: string): string {
     const cameraSettings = {
       front: 'camera-orbit="0deg 75deg 4m"',
       back: 'camera-orbit="180deg 75deg 4m"',
@@ -138,7 +153,7 @@ export class ScreenshotProcessor {
         </head>
         <body>
           <model-viewer
-            src="${glbDataURL}"
+            src="${glbUrl}"
             ${
               cameraSettings[cameraAngle as keyof typeof cameraSettings] ||
               cameraSettings.front
@@ -276,11 +291,11 @@ export class ScreenshotProcessor {
       console.log(`✅ GLB downloaded: ${glbBuffer.length} bytes`);
       logs.push(`GLB file downloaded successfully: ${glbBuffer.length} bytes`);
 
-      // Step 2: Convert to data URL
-      console.log("🔄 Converting GLB to data URL...");
-      const glbDataURL = this.glbBufferToDataURL(glbBuffer);
-      console.log("✅ GLB converted to data URL");
-      logs.push("GLB converted to data URL for model-viewer");
+      // Step 2: Upload GLB to blob storage
+      console.log("☁️ Uploading GLB to blob storage...");
+      const glbUrl = await this.uploadGLBToBlob(glbBuffer, job.articleId);
+      console.log("✅ GLB uploaded to blob storage");
+      logs.push("GLB uploaded to blob storage for model-viewer");
 
       // Step 3: Launch browser
       console.log("🚀 Launching browser...");
@@ -320,7 +335,7 @@ export class ScreenshotProcessor {
           await page.setViewport({ width: 800, height: 600 });
 
           console.log("📝 Generating HTML content...");
-          const htmlContent = this.generateModelViewerHTML(glbDataURL, "front");
+          const htmlContent = this.generateModelViewerHTML(glbUrl, "front");
 
           console.log("🌐 Loading HTML content...");
           await page.setContent(htmlContent, { waitUntil: "networkidle0" });
