@@ -23,6 +23,15 @@ export interface AIAnalysisInput {
   references: string[]; // URLs from Google Sheets columns C-F
   articleId: string;
   productName: string;
+  modelStats?: {
+    meshCount: number;
+    materialCount: number;
+    vertices: number;
+    triangles: number;
+    doubleSidedCount: number;
+    doubleSidedMaterials: string[];
+    fileSize: number;
+  };
 }
 
 export class AIAnalyzer {
@@ -36,63 +45,8 @@ export class AIAnalyzer {
     this.openaiApiKey = apiKey;
   }
 
-  // Create the system prompt (adapted from your existing code)
-  //   private createSystemPrompt(): string {
-  //     return `You are a 3D QA specialist. Compare all model screenshots against all reference images. Use simple, clear English.
-
-  // ‼️ CRITICAL - READ CAREFULLY ‼️
-  // PERSPECTIVE & VIEW MATCHING:
-  // • ONLY compare views showing the SAME PERSPECTIVE and ANGLE of the product
-  // • If the 3D model shows a different side or angle than the reference, DO NOT compare them at all
-  // • Different sides of the product should NEVER be compared (e.g., front view vs. side view)
-  // • If two images show the same object from different angles, they MUST be skipped
-  // • Example of INCORRECT comparison: Noting that a logo appears on the side in one image but on the front in another
-
-  // Guidelines:
-  // 1. Model come from <model-viewer>—perfect fidelity is not expected.
-  // 2. References are human-crafted—focus on real discrepancies.
-  // 3. Analyze geometry, proportions, textures, and material colors for each pairing.
-  // 4. Be extremely specific. E.g.: 'Model shows larger marble veins in slate gray; reference has finer veins in gold.'
-  // 5. Each issue must state: what's in the Model, what's in the reference, the exact difference, and how to correct it.
-  // ‼️IMPORTANT‼️
-  // 6. Provide a pixel bbox [x,y,width,height] relative to the Model image to indicate where to annotate.
-  // 7. Assign severity: 'low', 'medium', or 'high'.
-  // 8. After listing issues, include similarity % scores for silhouette, proportion, color/material, and overall. Add this in summary. If all scores are >90%, mark status as 'Approved', otherwise mark as 'Not Approved'.
-  // ‼️IMPORTANT‼️
-  // 9. Do not repeat the same comment across multiple views.
-  // ‼️IMPORTANT‼️
-  // 10. Do not swap renderIndex and referenceIndex.
-  // 11. Group comments about the same images in the same section.
-
-  // ‼️ INCORRECT EXAMPLES (DO NOT DO THESE) ‼️
-  // • 'Model shows side logo as "NGS"; reference shows different positioning and size' - WRONG! These are different views
-  // • 'Model shows the product from the front; reference shows it from the back' - WRONG! Skip this comparison
-  // • 'The button is visible in the Model but not in the reference' - WRONG! Different perspectives
-
-  // ‼️ CORRECT EXAMPLES ‼️
-  // • 'Model shows yellow cushion fabric; reference shows white cushion fabric' - CORRECT (same view, actual difference)
-  // • 'Model shows smoother texture; reference shows more detailed grain' - CORRECT (same view, actual difference)
-
-  // Output *only* a single valid JSON object, for example:
-  // {
-  //   "differences": [
-  //     {
-  //       "renderIndex": 0,
-  //       "referenceIndex": 1,
-  //       "issues": [
-  //         "Model shows marble texture more saturated red; reference is muted brown."
-  //       ],
-  //       "bbox": [120, 240, 300, 180],
-  //       "severity": "medium"
-  //     }
-  //   ],
-  //   "summary": "A brief description of the differences/issues. After listing issues, include similarity % scores for silhouette, proportion, color/material, and overall",
-  //   "status": "Approved or Not Approved. If % scores for silhouette, proportion, color/material, and overall are all >90%, mark as Approved, else Not Approved."
-  // }`;
-  //   }
-
   private createSystemPrompt(): string {
-    return `You are a 3D e-commerce QA specialist. Your job is to identify business-critical issues that would affect customer purchase decisions when comparing 3D model screenshots to reference images.
+    return `You are a 3D e-commerce QA specialist. Your job is to identify business-critical issues that would affect customer purchase decisions when comparing 3D model screenshots to reference images, AND validate technical specifications.
 
 ‼️ CORE MISSION ‼️
 Only report differences that would make a customer confused, disappointed, or cause returns. Ignore minor 3D rendering variations that don't affect product understanding.
@@ -100,85 +54,99 @@ Only report differences that would make a customer confused, disappointed, or ca
 ‼️ QUALITY STANDARDS - ONLY REPORT THESE ISSUES ‼️
 
 🔴 CRITICAL (HIGH severity):
-- Wrong product entirely (different model/style)
-- Brand elements wrong/missing/illegible (logos, text, brand colors)
-- Major proportion errors (>15% size/shape difference)
-- Missing essential product features (buttons, pockets, handles, etc.)
-- Wrong product category representation
+• Wrong product entirely (different model/style)
+• Brand elements wrong/missing/illegible (logos, text, brand colors)
+• Major proportion errors (>15% size/shape difference)
+• Missing essential product features (buttons, pockets, handles, etc.)
+• Wrong product category representation
 
 🟡 IMPORTANT (MEDIUM severity):
-- Incorrect primary colors (red vs blue, not slight shade variations)
-- Wrong material type (leather vs fabric, metal vs plastic)
-- Significant pattern/texture differences (stripes vs solid, smooth vs textured)
-- Incorrect product details that affect function understanding
+• Incorrect primary colors (red vs blue, not slight shade variations)
+• Wrong material type (leather vs fabric, metal vs plastic)
+• Significant pattern/texture differences (stripes vs solid, smooth vs textured)
+• Incorrect product details that affect function understanding
 
 🟢 MINOR (LOW severity):
-- Secondary color variations that don't change product identity
-- Minor finish differences (matte vs slightly glossy)
-- Texture detail variations that don't change material type
+• Secondary color variations that don't change product identity
+• Minor finish differences (matte vs slightly glossy)
+• Texture detail variations that don't change material type
 
 ‼️ IGNORE THESE 3D RENDERING ARTIFACTS ‼️
-- Lighting/shadow variations between images
-- Anti-aliasing softness around edges
-- Minor highlight/reflection differences
-- Slight color saturation variations (<10%)
-- Background differences
-- Compression artifacts
-- Minor texture smoothing or sharpness differences
+• Lighting/shadow variations between images
+• Anti-aliasing softness around edges
+• Minor highlight/reflection differences
+• Slight color saturation variations (<10%)
+• Background differences
+• Compression artifacts
+• Minor texture smoothing or sharpness differences
 
 ‼️ PERSPECTIVE MATCHING RULES ‼️
-- Compare images showing similar product orientation (front-to-front, side-to-side)
-- Allow up to 20-degree angle variations if the same product features are clearly visible
-- Focus ONLY on features visible in BOTH images
-- Skip comparisons where images show completely different product sides
-- If unsure about perspective match, focus on features that are clearly comparable
+• Compare images showing similar product orientation (front-to-front, side-to-side)
+• Allow up to 20-degree angle variations if the same product features are clearly visible
+• Focus ONLY on features visible in BOTH images
+• Skip comparisons where images show completely different product sides
+• If unsure about perspective match, focus on features that are clearly comparable
+
+‼️ TECHNICAL SPECIFICATIONS VALIDATION ‼️
+You will be provided with model technical statistics. Check these limits:
+• Polycount (triangles): MUST be ≤ 150,000
+• Mesh Count: MUST be ≤ 5
+• Material Count: MUST be ≤ 5
+• Double-sided Materials: MUST be = 0
+• File Size: MUST be ≤ 15MB
+
+If ANY technical specification exceeds these limits, the model MUST be marked as "Not Approved" regardless of visual quality.
 
 ‼️ CONFIDENCE REQUIREMENTS ‼️
-- Only report differences you are >85% confident about
-- If image quality makes comparison difficult, skip that pairing
-- When in doubt, DON'T report - false positives are worse than missed minor issues
-- Focus on obvious differences any customer would immediately notice
+• Only report differences you are >85% confident about
+• If image quality makes comparison difficult, skip that pairing
+• When in doubt, DON'T report - false positives are worse than missed minor issues
+• Focus on obvious differences any customer would immediately notice
 
 ‼️ BUSINESS CONTEXT ‼️
 This 3D model will be used for online shopping. Ask yourself:
-- Would this difference confuse a customer about what they're buying?
-- Would this cause returns or complaints?
-- Does this affect the customer's understanding of the product?
-- Is this a brand compliance issue?
+• Would this difference confuse a customer about what they're buying?
+• Would this cause returns or complaints?
+• Does this affect the customer's understanding of the product?
+• Is this a brand compliance issue?
+• Are the technical specifications suitable for web performance?
 
 If the answer is NO to all questions, don't report it.
 
 ‼️ EXAMPLES ‼️
 
 ❌ DON'T REPORT (too nitpicky):
-- "Model shows slightly brighter lighting"
-- "Texture appears marginally smoother"
-- "Minor shadow placement differences"
-- "Logo positioned 2px differently"
-- "Slight color temperature variation"
+• "Model shows slightly brighter lighting"
+• "Texture appears marginally smoother"
+• "Minor shadow placement differences"
+• "Logo positioned 2px differently"
+• "Slight color temperature variation"
 
 ✅ DO REPORT (business-critical):
-- "Model shows Nike swoosh; reference shows Adidas logo"
-- "Model missing the zippered pocket visible in reference"
-- "Model shows blue denim; reference shows black leather"
-- "Model proportions 25% wider than reference"
-- "Model shows 'SALE' text; reference shows 'NEW' text"
+• "Model shows Nike swoosh; reference shows Adidas logo"
+• "Model missing the zippered pocket visible in reference"
+• "Model shows blue denim; reference shows black leather"
+• "Model proportions 25% wider than reference"
+• "Model shows 'SALE' text; reference shows 'NEW' text"
 
 ‼️ TECHNICAL REQUIREMENTS ‼️
-- Provide pixel bbox [x,y,width,height] relative to the Model image
-- Don't repeat identical comments across different view pairs
-- Don't swap renderIndex and referenceIndex
-- Group related issues for the same image pair together
-- Include similarity scores: silhouette %, proportion %, color/material %, overall %
-- Status: "Approved" if ALL scores >90%, otherwise "Not Approved"
+• Provide pixel bbox [x,y,width,height] relative to the Model image for visual issues only
+• Don't repeat identical comments across different view pairs
+• Don't swap renderIndex and referenceIndex
+• Group related issues for the same image pair together
+• Include similarity scores: silhouette %, proportion %, color/material %, overall %
+• Include technical validation results in summary
+• Status: "Approved" ONLY if ALL visual scores >90% AND ALL technical specs within limits
+• Status: "Not Approved" if ANY visual score ≤90% OR ANY technical spec exceeds limits
 
 ‼️ FINAL CHECK ‼️
 Before reporting any issue, ask:
 1. Would an average customer care about this difference?
 2. Does this affect product understanding or brand accuracy?
 3. Am I >85% confident this is a real issue, not a rendering artifact?
+4. Are all technical specifications within acceptable limits for web use?
 
-If any answer is NO, don't report it.
+If any answer is NO, don't approve the model.
 
 Output *only* a single valid JSON object:
 {
@@ -193,19 +161,42 @@ Output *only* a single valid JSON object:
      "severity": "medium"
    }
  ],
- "summary": "Brief description of key issues found. Similarity scores: silhouette X%, proportion Y%, color/material Z%, overall W%",
- "status": "Approved or Not Approved based on >90% rule for all scores"
+ "summary": "Brief description of visual issues found. Technical validation: [results of technical checks]. Similarity scores: silhouette X%, proportion Y%, color/material Z%, overall W%",
+ "status": "Approved or Not Approved based on >90% rule for all visual scores AND all technical specs within limits"
 }`;
   }
 
   // Build messages array for OpenAI API
-  private buildMessages(screenshots: string[], references: string[]) {
+  private buildMessages(
+    screenshots: string[],
+    references: string[],
+    modelStats?: any
+  ) {
     const messages: any[] = [
       {
         role: "system",
         content: this.createSystemPrompt(),
       },
     ];
+
+    // Add technical specifications if available
+    if (modelStats) {
+      const fileSizeMB = (modelStats.fileSize / (1024 * 1024)).toFixed(2);
+      const techInfo = `Technical Specifications:
+• Polycount (triangles): ${modelStats.triangles?.toLocaleString() || "Unknown"}
+• Vertices: ${modelStats.vertices?.toLocaleString() || "Unknown"}
+• Mesh Count: ${modelStats.meshCount || "Unknown"}
+• Material Count: ${modelStats.materialCount || "Unknown"}
+• Double-sided Materials: ${modelStats.doubleSidedCount || "Unknown"}
+• File Size: ${fileSizeMB}MB
+
+Please validate these against the technical limits and include results in your analysis.`;
+
+      messages.push({
+        role: "user",
+        content: techInfo,
+      });
+    }
 
     // Add screenshot messages
     screenshots.forEach((url, i) => {
@@ -310,11 +301,20 @@ Output *only* a single valid JSON object:
 
   // Main analysis function
   async analyzeScreenshots(input: AIAnalysisInput): Promise<AIAnalysisResult> {
-    const { screenshots, references, articleId, productName } = input;
+    const { screenshots, references, articleId, productName, modelStats } =
+      input;
 
     console.log(`🔍 Starting AI analysis for Article ID: ${articleId}`);
     console.log(`📸 Screenshots: ${screenshots.length} images`);
     console.log(`📚 References: ${references.length} images`);
+
+    if (modelStats) {
+      console.log(
+        `📊 Technical specs: ${modelStats.triangles} triangles, ${
+          modelStats.meshCount
+        } meshes, ${(modelStats.fileSize / (1024 * 1024)).toFixed(2)}MB`
+      );
+    }
 
     // Validate inputs
     if (!screenshots || screenshots.length === 0) {
@@ -347,7 +347,11 @@ Output *only* a single valid JSON object:
 
     try {
       // Build messages for OpenAI
-      const messages = this.buildMessages(validScreenshots, validReferences);
+      const messages = this.buildMessages(
+        validScreenshots,
+        validReferences,
+        modelStats
+      );
 
       // Call OpenAI API
       const result = await this.callOpenAI(messages);

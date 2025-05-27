@@ -325,9 +325,14 @@ class JobQueue {
   }
 
   // The actual QA processing logic
-  private async executeQAProcessing(
-    job: QAJob
-  ): Promise<{ screenshots: string[]; aiAnalysis?: any; pdfUrl?: string }> {
+  // Updated executeQAProcessing method in lib/queue.ts
+
+  private async executeQAProcessing(job: QAJob): Promise<{
+    screenshots: string[];
+    modelStats?: any;
+    aiAnalysis?: any;
+    pdfUrl?: string;
+  }> {
     // Import the screenshot processor, AI analyzer, and PDF generator
     const { screenshotProcessor } = await import("./screenshotProcessor");
     const { aiAnalyzer } = await import("./aiAnalysis");
@@ -349,12 +354,24 @@ class JobQueue {
         `Starting AI analysis with ${screenshotResult.screenshots.length} screenshots and ${job.references.length} references...`
       );
 
+      // Log model stats if available
+      if (screenshotResult.modelStats) {
+        const fileSizeMB = (
+          screenshotResult.modelStats.fileSize /
+          (1024 * 1024)
+        ).toFixed(2);
+        job.processingLogs.push(
+          `Model statistics: ${screenshotResult.modelStats.triangles} triangles, ${screenshotResult.modelStats.meshCount} meshes, ${screenshotResult.modelStats.materialCount} materials, ${fileSizeMB}MB`
+        );
+      }
+
       try {
         aiAnalysisResult = await aiAnalyzer.analyzeScreenshots({
           screenshots: screenshotResult.screenshots,
           references: job.references,
           articleId: job.articleId,
           productName: job.productName,
+          modelStats: screenshotResult.modelStats, // 🔥 Pass model stats to AI
         });
 
         job.processingLogs.push("✅ AI analysis completed successfully");
@@ -409,6 +426,7 @@ class JobQueue {
 
     return {
       screenshots: screenshotResult.screenshots,
+      modelStats: screenshotResult.modelStats, // 🔥 Return model stats
       aiAnalysis: aiAnalysisResult,
       pdfUrl: pdfUrl || undefined,
     };
